@@ -1,0 +1,2458 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SDM – Seguimiento de Sprints</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:    #0f1e36;
+      --navy2:   #162840;
+      --blue:    #1a56db;
+      --accent:  #2563eb;
+      --green:   #16a34a;
+      --red:     #dc2626;
+      --orange:  #ea580c;
+      --yellow:  #ca8a04;
+      --gray:    #6b7280;
+      --light:   #f8fafc;
+      --border:  #e2e8f0;
+      --text:    #1e293b;
+      --muted:   #64748b;
+      --card-shadow: 0 1px 4px rgba(0,0,0,.08);
+      --radius:  10px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--light);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ─── HEADER ─── */
+    header {
+      background: var(--navy);
+      color: #fff;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 62px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .logo-badge {
+      background: var(--blue);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: .5px;
+    }
+    .header-title { font-size: 17px; font-weight: 600; opacity: .92; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .update-time { font-size: 12px; opacity: .55; }
+    .btn-icon {
+      background: rgba(255,255,255,.1);
+      border: none;
+      color: #fff;
+      border-radius: 7px;
+      padding: 7px 13px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: background .15s;
+    }
+    .btn-icon:hover { background: rgba(255,255,255,.2); }
+    .btn-icon svg { width:15px; height:15px; }
+
+    /* ─── LANDING PAGE ─── */
+    #landing-overlay {
+      position: fixed; inset: 0;
+      background: #0d1c32;
+      z-index: 300;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    #landing-overlay.hidden { display: none; }
+
+    /* Logo bar */
+    .landing-logo-bar {
+      background: #0a0a0a;
+      border-bottom: 3px solid #c8d400;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      padding: 16px 32px;
+      flex-wrap: wrap;
+      gap: 0;
+    }
+    .logo-alcaldia-wrap {
+      display: flex; align-items: center; gap: 12px;
+      padding-right: 28px;
+    }
+    .logo-alcaldia-svg { width: 54px; height: 54px; flex-shrink: 0; }
+    .logo-alcaldia-text {
+      display: flex; flex-direction: column;
+      color: #c8d400; font-size: 10px; font-weight: 700;
+      letter-spacing: .8px; line-height: 1.5; text-transform: uppercase;
+    }
+    .landing-logo-divider {
+      width: 1px; height: 54px;
+      background: rgba(200,212,0,.3);
+      margin: 0 28px;
+    }
+    .logo-movilidad-wrap { display: flex; flex-direction: column; align-items: flex-start; }
+    .logo-sec-lbl {
+      font-size: 11px; font-weight: 400; color: rgba(255,255,255,.6);
+      letter-spacing: 2px; text-transform: uppercase;
+    }
+    .logo-dep-lbl {
+      font-size: 24px; font-weight: 900; color: #c8d400;
+      letter-spacing: 1px; text-transform: uppercase; line-height: 1.1;
+    }
+    .logo-bogota-wrap { display: flex; flex-direction: column; align-items: center; }
+    .logo-bogota-stars { font-size: 14px; color: #c8d400; letter-spacing: 4px; }
+    .logo-bogota-name {
+      font-size: 26px; font-weight: 900; color: #c8d400;
+      letter-spacing: 3px; line-height: 1.1;
+    }
+
+    /* Body */
+    .landing-body {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 48px 24px 56px;
+    }
+    .landing-title {
+      font-size: clamp(24px, 4vw, 36px); font-weight: 800; color: #fff;
+      text-align: center; margin-bottom: 8px;
+    }
+    .landing-subtitle {
+      font-size: clamp(14px, 2vw, 18px); font-weight: 500; color: #c8d400;
+      text-align: center; letter-spacing: .4px; margin-bottom: 44px;
+    }
+
+    /* Info cards */
+    .landing-info-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px; width: 100%; max-width: 900px;
+      margin-bottom: 28px;
+    }
+    @media (max-width: 720px) { .landing-info-grid { grid-template-columns: repeat(2,1fr); } }
+    @media (max-width: 420px) { .landing-info-grid { grid-template-columns: 1fr; } }
+    .landing-info-card {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(200,212,0,.2);
+      border-radius: 14px; padding: 22px 16px; text-align: center;
+    }
+    .landing-info-label {
+      font-size: 10px; font-weight: 700; color: rgba(255,255,255,.45);
+      text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;
+    }
+    .landing-info-val {
+      font-size: 22px; font-weight: 800; color: #c8d400;
+      line-height: 1.15; margin-bottom: 4px; min-height: 28px;
+    }
+    .landing-info-sub { font-size: 11px; color: rgba(255,255,255,.35); }
+
+    /* Sprint date config */
+    .landing-sprint-config {
+      display: flex; align-items: flex-end; gap: 14px;
+      flex-wrap: wrap; justify-content: center; margin-bottom: 40px;
+    }
+    .landing-sprint-config label {
+      font-size: 11px; color: rgba(255,255,255,.45);
+      display: flex; flex-direction: column; gap: 6px; font-weight: 600;
+      letter-spacing: .5px; text-transform: uppercase;
+    }
+    .landing-sprint-config input[type="date"] {
+      background: rgba(255,255,255,.07); border: 1px solid rgba(200,212,0,.3);
+      border-radius: 8px; padding: 9px 13px; color: #fff; font-size: 13px;
+      outline: none; cursor: pointer; min-width: 148px;
+    }
+    .landing-sprint-config input[type="date"]:focus { border-color: #c8d400; }
+    .btn-save-sprint {
+      background: rgba(200,212,0,.12); border: 1px solid rgba(200,212,0,.35);
+      color: #c8d400; border-radius: 8px; padding: 10px 20px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: background .15s; white-space: nowrap;
+    }
+    .btn-save-sprint:hover { background: rgba(200,212,0,.22); }
+
+    /* Enter button */
+    .btn-landing-enter {
+      background: #c8d400; color: #111; border: none;
+      border-radius: 14px; padding: 16px 56px;
+      font-size: 17px; font-weight: 800; cursor: pointer;
+      letter-spacing: .3px; transition: background .15s, transform .1s;
+      box-shadow: 0 4px 28px rgba(200,212,0,.4);
+    }
+    .btn-landing-enter:hover { background: #d9e800; transform: translateY(-2px); }
+
+    /* ─── SETUP MODAL ─── */
+    #setup-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15,30,54,.8);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #setup-overlay.hidden { display: none; }
+    .setup-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px 40px;
+      max-width: 520px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,.3);
+    }
+    .setup-box h2 { font-size: 22px; color: var(--navy); margin-bottom: 8px; }
+    .setup-box p { color: var(--muted); font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+    .setup-steps {
+      background: var(--light);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+    .setup-steps ol { padding-left: 18px; }
+    .setup-steps li { font-size: 13px; color: var(--text); margin-bottom: 6px; line-height: 1.5; }
+    .setup-steps code {
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .setup-input-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    #sheets-url-input {
+      width: 100%;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border .15s;
+      margin-bottom: 14px;
+    }
+    #sheets-url-input:focus { border-color: var(--accent); }
+    .setup-btns { display: flex; gap: 10px; }
+    .btn-primary {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 22px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      flex: 1;
+      transition: background .15s;
+    }
+    .btn-primary:hover { background: #1748c4; }
+    .btn-secondary {
+      background: var(--light);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-secondary:hover { background: var(--border); }
+    #setup-error {
+      color: var(--red);
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
+
+    /* ─── MAIN CONTENT ─── */
+    main { padding: 20px 24px 40px; max-width: 1300px; margin: 0 auto; }
+
+    /* ─── SPRINT TABS ─── */
+    .sprint-nav {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .sprint-tab {
+      background: #fff;
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .sprint-tab:hover { border-color: var(--accent); color: var(--accent); }
+    .sprint-tab.active {
+      background: var(--navy);
+      border-color: var(--navy);
+      color: #fff;
+    }
+    .sprint-tab.current::after {
+      content: ' ●';
+      color: #4ade80;
+      font-size: 10px;
+    }
+
+    /* ─── SPRINT INFO BAR ─── */
+    .sprint-info-bar {
+      background: var(--navy);
+      border-radius: var(--radius);
+      padding: 12px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+    }
+    .sprint-info-item {
+      display: flex;
+      flex-direction: column;
+      padding: 4px 28px 4px 0;
+      border-right: 1px solid rgba(255,255,255,.15);
+      margin-right: 28px;
+    }
+    .sprint-info-item:last-child { border-right: none; margin-right: 0; padding-right: 0; }
+    .sprint-info-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: rgba(255,255,255,.5);
+      margin-bottom: 3px;
+    }
+    .sprint-info-val {
+      font-size: 16px;
+      font-weight: 700;
+      color: #c8d400;
+      white-space: nowrap;
+    }
+    .sprint-info-val.ok   { color: #4ade80; }
+    .sprint-info-val.warn { color: #fbbf24; }
+    .sprint-info-val.late { color: #f87171; }
+
+    /* ─── STATS ─── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 550px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .stat-card {
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      box-shadow: var(--card-shadow);
+      border-left: 4px solid transparent;
+    }
+    .stat-card.total    { border-color: var(--navy); }
+    .stat-card.done     { border-color: var(--green); }
+    .stat-card.progress { border-color: var(--blue); }
+    .stat-card.blocked  { border-color: var(--red); }
+    .stat-card.prod     { border-color: #0891b2; }
+
+    .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+    .stat-value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .stat-sub   { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .stat-card.total    .stat-value { color: var(--navy); }
+    .stat-card.done     .stat-value { color: var(--green); }
+    .stat-card.progress .stat-value { color: var(--blue); }
+    .stat-card.blocked  .stat-value { color: var(--red); }
+    .stat-card.prod     .stat-value { color: #0891b2; }
+
+    /* Progress bar */
+    .progress-bar-wrap { background: #dcfce7; border-radius: 99px; height: 5px; margin-top: 8px; }
+    .progress-bar-fill { background: var(--green); height: 5px; border-radius: 99px; transition: width .4s; }
+
+    /* ─── CARRY-OVER SECTION ─── */
+    .carryover-section {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--card-shadow);
+      padding: 16px 20px;
+      margin-bottom: 18px;
+      border-left: 4px solid #f59e0b;
+    }
+    .carryover-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .carryover-title {
+      font-size: 13px; font-weight: 700; color: #92400e;
+    }
+    .carryover-badge {
+      background: #fef3c7; color: #92400e;
+      border-radius: 99px; padding: 2px 10px;
+      font-size: 12px; font-weight: 700;
+    }
+    .carryover-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .carryover-table th {
+      text-align: left; padding: 6px 10px;
+      background: #fffbeb; color: #78350f;
+      font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+    }
+    .carryover-table td { padding: 7px 10px; border-bottom: 1px solid #fef3c7; }
+    .carryover-table tr:last-child td { border-bottom: none; }
+    .carryover-table tr:hover td { background: #fffbeb; }
+
+    /* ─── FILTERS ─── */
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-btn {
+      background: #fff;
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .15s;
+      font-weight: 500;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .filter-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .filter-btn .count {
+      background: rgba(255,255,255,.25);
+      border-radius: 99px;
+      padding: 0 6px;
+      font-size: 11px;
+      margin-left: 4px;
+    }
+    .filter-btn:not(.active) .count {
+      background: var(--border);
+      color: var(--muted);
+    }
+    .search-input {
+      margin-left: auto;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      outline: none;
+      width: 220px;
+      transition: border .15s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+
+    /* ─── CARDS GRID ─── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 14px;
+    }
+
+    /* ─── TASK CARD ─── */
+    .task-card {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--card-shadow);
+      border-left: 4px solid transparent;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: box-shadow .15s, transform .1s;
+    }
+    .task-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.12); transform: translateY(-1px); }
+
+    .task-card.cat-pendiente  { border-color: var(--orange); }
+    .task-card.cat-en-progreso{ border-color: var(--blue); }
+    .task-card.cat-completado { border-color: var(--green); }
+
+    .task-header { display: flex; align-items: flex-start; gap: 8px; }
+    .task-id {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      background: var(--light);
+      border-radius: 5px;
+      padding: 2px 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .task-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .task-module {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .module-badge {
+      background: #e0e7ff;
+      color: #3730a3;
+      border-radius: 5px;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .task-footer {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
+    /* Status badge */
+    .status-badge {
+      border-radius: 5px;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .3px;
+    }
+
+    /* Priority badge */
+    .priority-badge {
+      border-radius: 5px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .pri-1 { background: #fef2f2; color: var(--red); }
+    .pri-2 { background: #fff7ed; color: var(--orange); }
+    .pri-3 { background: #fefce8; color: var(--yellow); }
+    .pri-4 { background: #f0fdf4; color: var(--green); }
+    .pri-5 { background: #f8fafc; color: var(--gray); }
+
+    .task-date {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .task-date.overdue { color: var(--red); font-weight: 600; }
+
+    /* ─── EMPTY STATE ─── */
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .empty-state svg { opacity: .3; margin-bottom: 12px; }
+    .empty-state p { font-size: 15px; }
+
+    /* ─── LOADING ─── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: rgba(255,255,255,.85);
+      z-index: 150;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+    }
+    #loading.hidden { display: none; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 4px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 14px; color: var(--muted); }
+
+    /* ─── TOAST ─── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--navy);
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px;
+      z-index: 300;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all .25s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ─── LEGEND ─── */
+    .legend {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      padding: 12px 16px;
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--card-shadow);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ─── CHARTS SECTION ─── */
+    .charts-section {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .chart-card.full-width { grid-column: 1 / -1; }
+    @media (max-width: 1100px) { .charts-section { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 640px)  { .charts-section { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--card-shadow);
+      padding: 18px 20px;
+    }
+    .chart-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 14px;
+    }
+    .chart-wrap {
+      position: relative;
+      width: 100%;
+    }
+    .chart-wrap.donut { height: 220px; display: flex; align-items: center; justify-content: center; }
+    .chart-wrap.bar   { height: 240px; }
+    .chart-wrap.line  { height: 200px; }
+
+    /* Donut center label */
+    .donut-center {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+    }
+    .donut-center-val  { font-size: 26px; font-weight: 800; color: var(--text); }
+    .donut-center-lbl  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ─── VIEW TOGGLE & EXPORT ─── */
+    .view-actions {
+      display: flex; align-items: center; gap: 6px; margin-left: auto;
+    }
+    .btn-view {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .15s;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .btn-view.active {
+      background: var(--navy);
+      color: #fff;
+      border-color: var(--navy);
+    }
+    .btn-view:hover:not(.active) { background: var(--border); }
+    .btn-export {
+      background: #16a34a;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 6px 13px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 5px;
+      transition: background .15s;
+    }
+    .btn-export:hover { background: #15803d; }
+
+    /* ─── LIST VIEW ─── */
+    .task-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      font-size: 13px;
+    }
+    .task-table thead th {
+      background: var(--navy);
+      color: rgba(255,255,255,.85);
+      padding: 11px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    .task-table thead th:hover { background: var(--navy2); }
+    .task-table thead th .sort-arrow { opacity: .4; margin-left: 4px; }
+    .task-table thead th.sorted .sort-arrow { opacity: 1; }
+    .task-table tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+    .task-table tbody tr:last-child { border-bottom: none; }
+    .task-table tbody tr:hover { background: #f8fafc; }
+    .task-table td {
+      padding: 10px 14px;
+      vertical-align: middle;
+      color: var(--text);
+    }
+    .task-table td.col-id {
+      color: var(--muted); font-size: 12px; white-space: nowrap; width: 52px;
+    }
+    .task-table td.col-name {
+      font-weight: 600; min-width: 200px; max-width: 340px;
+    }
+    .task-table td.col-project { max-width: 160px; }
+    .task-table td.col-status { white-space: nowrap; }
+    .task-table td.col-date { white-space: nowrap; color: var(--muted); font-size: 12px; }
+    .tbl-status-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 5px;
+      font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .tbl-pri-badge {
+      display: inline-block;
+      padding: 2px 7px; border-radius: 4px;
+      font-size: 11px; font-weight: 600;
+    }
+    .tbl-proj-badge {
+      display: inline-block;
+      background: #eff6ff; color: #1d4ed8;
+      border-radius: 4px; padding: 2px 7px; font-size: 11px;
+      margin-right: 3px; margin-bottom: 2px;
+    }
+    .task-table-wrap { overflow-x: auto; border-radius: var(--radius); }
+
+    @media (max-width: 640px) {
+      main { padding: 14px 14px 40px; }
+      .search-input { width: 100%; margin-left: 0; }
+      .header-title { display: none; }
+    }
+
+    /* ─── PDF / PRINT ─── */
+    @media print {
+      @page { size: A4 landscape; margin: 14mm 12mm; }
+
+      /* Ocultar todo excepto el contenido del sprint activo */
+      body { background: #fff !important; color: #000 !important; font-size: 10pt; }
+      #landing-overlay, #setup-overlay, header, .filter-bar,
+      .view-actions, #loading, #toast, .sprint-nav,
+      .charts-section, #carry-over-section,
+      .btn-export, #btn-pdf, #btn-view-cards, #btn-view-list,
+      #search-input { display: none !important; }
+
+      main { padding: 0 !important; }
+
+      /* Barra de info del sprint */
+      .sprint-info-bar {
+        display: flex !important;
+        background: #1e3a5f !important;
+        color: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        border-radius: 6px;
+        padding: 8px 14px;
+        margin-bottom: 10px;
+        font-size: 9pt;
+      }
+      .sprint-info-label { color: rgba(255,255,255,.6) !important; font-size: 8pt; }
+      .sprint-info-val   { color: #c8d400 !important; font-size: 11pt; }
+
+      /* Tarjetas de métricas */
+      .stats-grid {
+        display: grid !important;
+        grid-template-columns: repeat(5, 1fr) !important;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      .stat-card {
+        border: 1px solid #ddd !important;
+        border-radius: 6px;
+        padding: 6px 10px !important;
+        break-inside: avoid;
+        background: #fff !important;
+      }
+      .stat-value { font-size: 18pt !important; color: #1e3a5f !important; }
+      .stat-label { font-size: 8pt !important; color: #555 !important; }
+      .stat-sub   { font-size: 7.5pt !important; }
+
+      /* Tabla */
+      .task-table-wrap { overflow: visible !important; }
+      .task-table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        font-size: 8.5pt !important;
+        page-break-inside: auto;
+      }
+      .task-table thead { display: table-header-group; }
+      .task-table tr    { page-break-inside: avoid; }
+      .task-table th {
+        background: #1e3a5f !important;
+        color: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        padding: 5px 7px !important;
+        text-align: left;
+        font-size: 8pt;
+      }
+      .task-table td {
+        padding: 4px 7px !important;
+        border-bottom: 1px solid #e5e7eb !important;
+        vertical-align: middle;
+      }
+      .task-table tr:nth-child(even) td { background: #f8fafc !important; }
+      .tbl-status-badge {
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+        font-size: 7.5pt !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .tbl-proj-badge {
+        font-size: 7.5pt !important;
+        padding: 1px 5px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      /* Encabezado del PDF */
+      #pdf-header { display: block !important; }
+    }
+    /* Ocultar en pantalla */
+    #pdf-header { display: none; }
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Cargando datos…</div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Setup Modal -->
+<div id="setup-overlay">
+  <div class="setup-box">
+    <h2>⚙️ Configurar fuente de datos</h2>
+    <p>Este dashboard lee los datos directamente desde un Google Sheet publicado. Sigue estos pasos una vez:</p>
+
+    <div class="setup-steps">
+      <ol>
+        <li>Crea o abre tu <strong>Google Sheet</strong> con el CSV de Notion.</li>
+        <li>Menú <code>Archivo</code> → <code>Compartir</code> → <code>Publicar en la web</code>.</li>
+        <li>Elige <strong>Documento completo</strong> y formato <strong>Valores separados por comas (.csv)</strong>.</li>
+        <li>Haz clic en <strong>Publicar</strong> y copia el enlace generado.</li>
+        <li>Pégalo aquí abajo y guarda.</li>
+      </ol>
+    </div>
+
+    <div class="setup-input-label">URL pestaña 1 — Datos de tareas (CSV)</div>
+    <input type="url" id="sheets-url-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" />
+
+    <div class="setup-input-label" style="margin-top:10px">URL pestaña 2 — Config sprints (CSV) <span style="font-weight:400;color:#94a3b8">opcional</span></div>
+    <input type="url" id="config-url-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?gid=XXXX&output=csv" style="margin-bottom:6px"/>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:14px">La pestaña 2 debe tener columnas: <strong>Sprint | Inicio | Fin</strong> (ej: Sprint 3 | 02/06/2025 | 27/06/2025)</div>
+
+    <div id="setup-error">No se pudo cargar el archivo. Verifica que el enlace sea correcto y esté publicado como CSV.</div>
+
+    <div class="setup-btns">
+      <button class="btn-primary" id="save-url-btn">Cargar datos</button>
+      <button class="btn-secondary" id="demo-btn">Ver demo</button>
+    </div>
+  </div>
+</div>
+
+<!-- LANDING PAGE -->
+<div id="landing-overlay">
+
+  <!-- Barra de logos institucionales -->
+  <div class="landing-logo-bar">
+    <!-- Alcaldía Mayor de Bogotá -->
+    <div class="logo-alcaldia-wrap">
+      <svg class="logo-alcaldia-svg" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="30" cy="30" r="28" fill="none" stroke="#c8d400" stroke-width="1.5"/>
+        <path d="M30 6 L52 20 L52 44 Q30 56 8 44 L8 20 Z" fill="none" stroke="#c8d400" stroke-width="1.2"/>
+        <!-- Cóndor estilizado -->
+        <path d="M30 14 C34 12 40 14 40 19 C40 23 36 23 33 22 C31 26 30 28 30 28 C30 28 29 26 27 22 C24 23 20 23 20 19 C20 14 26 12 30 14Z" fill="#c8d400"/>
+        <rect x="28.5" y="28" width="3" height="14" rx="1.5" fill="#c8d400"/>
+        <path d="M25 42 Q28 40 30 42 Q32 40 35 42" stroke="#c8d400" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="26" cy="18" r="1.5" fill="#0a0a0a"/>
+        <circle cx="34" cy="18" r="1.5" fill="#0a0a0a"/>
+      </svg>
+      <div class="logo-alcaldia-text">
+        <span>ALCALDÍA MAYOR</span>
+        <span>DE BOGOTÁ D.C.</span>
+      </div>
+    </div>
+
+    <div class="landing-logo-divider"></div>
+
+    <!-- Secretaría de Movilidad -->
+    <div class="logo-movilidad-wrap">
+      <span class="logo-sec-lbl">Secretaría de</span>
+      <span class="logo-dep-lbl">Movilidad</span>
+    </div>
+
+    <div class="landing-logo-divider"></div>
+
+    <!-- Bogotá -->
+    <div class="logo-bogota-wrap">
+      <span class="logo-bogota-stars">★ ★ ★</span>
+      <span class="logo-bogota-name">BOGOTÁ</span>
+    </div>
+  </div>
+
+  <!-- Cuerpo principal -->
+  <div class="landing-body">
+    <div class="landing-title">SDM – Seguimiento de Sprints</div>
+    <div class="landing-subtitle">UT Insitelca Comparenderas 2025</div>
+
+    <!-- Tarjetas de información del sprint -->
+    <div class="landing-info-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="landing-info-card">
+        <div class="landing-info-label">Sprint actual</div>
+        <div class="landing-info-val" id="land-sprint" style="font-size:18px">—</div>
+        <div class="landing-info-sub">sprint en curso</div>
+      </div>
+      <div class="landing-info-card">
+        <div class="landing-info-label">Período</div>
+        <div class="landing-info-val" id="land-period-ini" style="font-size:15px">—</div>
+        <div class="landing-info-sub" id="land-period-fin">fecha ini / fin</div>
+      </div>
+      <div class="landing-info-card">
+        <div class="landing-info-label">Corte</div>
+        <div class="landing-info-val" id="land-corte" style="font-size:15px">—</div>
+        <div class="landing-info-sub">fecha de actualización</div>
+      </div>
+      <div class="landing-info-card">
+        <div class="landing-info-label">Días hábiles transcurridos</div>
+        <div class="landing-info-val" id="land-elapsed">—</div>
+        <div class="landing-info-sub">desde inicio del sprint</div>
+      </div>
+      <div class="landing-info-card">
+        <div class="landing-info-label">Días restantes</div>
+        <div class="landing-info-val" id="land-remaining">—</div>
+        <div class="landing-info-sub">hasta fin del sprint</div>
+      </div>
+    </div>
+
+    <!-- Botón de ingreso -->
+    <button class="btn-landing-enter" id="btn-enter">
+      Ingresar al Dashboard →
+    </button>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="header-left">
+    <div class="logo-badge">SDM</div>
+    <div class="header-title">Seguimiento de Sprints</div>
+  </div>
+  <div class="header-right">
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+      <span class="update-time" id="update-time"></span>
+      <span class="update-time" id="report-date" style="color:#4ade80;font-weight:600"></span>
+    </div>
+    <button class="btn-icon" id="refresh-btn" title="Actualizar datos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      Actualizar
+    </button>
+    <button class="btn-icon" id="config-btn" title="Configurar fuente de datos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Configurar
+    </button>
+  </div>
+</header>
+
+<!-- Encabezado visible solo al imprimir/PDF -->
+<div id="pdf-header" style="margin-bottom:12px">
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1e3a5f;padding-bottom:8px;margin-bottom:8px">
+    <div>
+      <div style="font-size:14pt;font-weight:700;color:#1e3a5f">Secretaría de Movilidad — Seguimiento de Sprints</div>
+      <div style="font-size:9pt;color:#555">UT Insitelca Comparenderas 2025</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#777">
+      <div id="pdf-sprint-label" style="font-size:11pt;font-weight:700;color:#1e3a5f"></div>
+      <div id="pdf-fecha">Corte: —</div>
+      <div id="pdf-generado"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<main id="main-content">
+  <!-- Sprint tabs -->
+  <div class="sprint-nav" id="sprint-nav"></div>
+
+  <!-- Sprint info bar -->
+  <div class="sprint-info-bar" id="sprint-info-bar" style="display:none">
+    <div class="sprint-info-item">
+      <div class="sprint-info-label">Período</div>
+      <div class="sprint-info-val" id="sib-period">—</div>
+    </div>
+    <div class="sprint-info-item">
+      <div class="sprint-info-label">Corte</div>
+      <div class="sprint-info-val" id="sib-corte">—</div>
+    </div>
+    <div class="sprint-info-item">
+      <div class="sprint-info-label">Días hábiles transcurridos</div>
+      <div class="sprint-info-val" id="sib-elapsed">—</div>
+    </div>
+    <div class="sprint-info-item">
+      <div class="sprint-info-label">Días restantes</div>
+      <div class="sprint-info-val" id="sib-remaining">—</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card total">
+      <div class="stat-label">Total tareas</div>
+      <div class="stat-value" id="stat-total">—</div>
+      <div class="stat-sub">en este sprint</div>
+    </div>
+    <div class="stat-card done">
+      <div class="stat-label">✅ Completadas</div>
+      <div class="stat-value" id="stat-done">—</div>
+      <div class="stat-sub" id="stat-sub-done">— del sprint</div>
+      <div class="progress-bar-wrap" style="margin-top:8px">
+        <div class="progress-bar-fill" id="stat-pct-bar" style="width:0%"></div>
+      </div>
+    </div>
+    <div class="stat-card progress">
+      <div class="stat-label">🔵 En progreso / Def.</div>
+      <div class="stat-value" id="stat-progress">—</div>
+      <div class="stat-sub" id="stat-sub-progress">— del sprint</div>
+    </div>
+    <div class="stat-card blocked">
+      <div class="stat-label">🔴 Bloqueadas</div>
+      <div class="stat-value" id="stat-blocked">—</div>
+      <div class="stat-sub">requieren atención</div>
+    </div>
+    <div class="stat-card prod">
+      <div class="stat-label">🚀 En producción</div>
+      <div class="stat-value" id="stat-prod">—</div>
+      <div class="stat-sub" id="stat-sub-prod">— del total</div>
+    </div>
+  </div>
+
+  <!-- Charts: 4 en fila + comparativo full-width -->
+  <div class="charts-section" id="charts-section">
+    <!-- 1. Estado de tareas -->
+    <div class="chart-card">
+      <div class="chart-title">Estado de tareas</div>
+      <div class="chart-wrap donut">
+        <canvas id="chart-donut"></canvas>
+        <div class="donut-center">
+          <div class="donut-center-val" id="donut-center-val">0</div>
+          <div class="donut-center-lbl">tareas</div>
+        </div>
+      </div>
+    </div>
+    <!-- 2. Distribución por prioridad -->
+    <div class="chart-card">
+      <div class="chart-title">Distribución por prioridad</div>
+      <div class="chart-wrap donut" style="height:220px">
+        <canvas id="chart-priority"></canvas>
+      </div>
+    </div>
+    <!-- 3. En producción -->
+    <div class="chart-card">
+      <div class="chart-title">En producción</div>
+      <div class="chart-wrap donut">
+        <canvas id="chart-prod"></canvas>
+        <div class="donut-center">
+          <div class="donut-center-val" id="prod-center-val" style="font-size:22px">0%</div>
+          <div class="donut-center-lbl">en prod.</div>
+        </div>
+      </div>
+    </div>
+    <!-- 4. Tareas por proyecto -->
+    <div class="chart-card">
+      <div class="chart-title">Tareas por proyecto</div>
+      <div class="chart-wrap bar" style="height:220px">
+        <canvas id="chart-project"></canvas>
+      </div>
+    </div>
+    <!-- 5. Comparativo entre sprints (full width) -->
+    <div class="chart-card full-width">
+      <div class="chart-title">Comparativo entre sprints</div>
+      <div class="chart-wrap bar" style="height:200px">
+        <canvas id="chart-sprint"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Carry-over: tareas que pasan al siguiente sprint -->
+  <div class="carryover-section" id="carryover-section" style="display:none">
+    <div class="carryover-header">
+      <div class="carryover-title" id="carryover-title">🔄 Tareas que continúan del sprint anterior</div>
+      <span class="carryover-badge" id="carryover-badge">0</span>
+    </div>
+    <div id="carryover-list"></div>
+  </div>
+
+  <!-- Filters + view toggle -->
+  <!-- Fila 1: filtros + búsqueda -->
+  <div class="filter-bar" id="filter-bar">
+    <button class="filter-btn active" data-filter="ALL">Todos <span class="count" id="count-all">0</span></button>
+    <button class="filter-btn" data-filter="PENDIENTE">⏳ Pendiente <span class="count" id="count-pendiente">0</span></button>
+    <button class="filter-btn" data-filter="EN PROGRESO">🔵 En Progreso <span class="count" id="count-progreso">0</span></button>
+    <button class="filter-btn" data-filter="BLOQUEADO" style="--filter-accent:#ef4444">🔴 Bloqueados <span class="count" id="count-bloqueado">0</span></button>
+    <button class="filter-btn" data-filter="COMPLETADO">✅ Completado <span class="count" id="count-completado">0</span></button>
+    <input type="text" class="search-input" id="search-input" placeholder="🔍 Buscar tarea o módulo…" />
+  </div>
+
+  <!-- Fila 2: vista + exportar -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+    <button class="btn-view" id="btn-view-cards" title="Vista tarjetas">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Tarjetas
+    </button>
+    <button class="btn-view active" id="btn-view-list" title="Vista lista">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Lista
+    </button>
+    <div style="flex:1"></div>
+    <button class="btn-export" id="btn-export" title="Exportar a Excel">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Excel
+    </button>
+    <button class="btn-export" id="btn-pdf" title="Exportar a PDF" style="background:#c2410c">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h1a2 2 0 010 4H9v-4zm5 0h2m-2 2h2m-2 2h1"/></svg>
+      PDF
+    </button>
+  </div>
+
+  <!-- Task view (cards or list) -->
+  <div id="task-view"></div>
+</main>
+
+<script>
+// ══════════════════════════════════════════════
+//  STATUS CONFIG
+// ══════════════════════════════════════════════
+const STATUS_MAP = {
+  // PENDIENTE
+  'No iniciado':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  'Not Started':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  'Pausada':       { label:'Pausada',                  cat:'PENDIENTE',   bg:'#e5e7eb', color:'#374151', emoji:'⚫' },
+  'Paused':        { label:'Pausada',                  cat:'PENDIENTE',   bg:'#e5e7eb', color:'#374151', emoji:'⚫' },
+  'Definición':    { label:'Definición',               cat:'PENDIENTE',   bg:'#fff7ed', color:'#c2410c', emoji:'🟠' },
+  'Defining':      { label:'Definición',               cat:'PENDIENTE',   bg:'#fff7ed', color:'#c2410c', emoji:'🟠' },
+  'Not Started':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  'Not started':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  'Archivado':     { label:'Archivado',                cat:'PENDIENTE',   bg:'#f3f4f6', color:'#6b7280', emoji:'⚫' },
+  'Archived':      { label:'Archivado',                cat:'PENDIENTE',   bg:'#f3f4f6', color:'#6b7280', emoji:'⚫' },
+  // EN PROGRESO
+  'En desarrollo': { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
+  'In Progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
+  'In progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
+  'in progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
+  'Bloqueado':     { label:'Bloqueado',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
+  'Blocked':       { label:'Bloqueado',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
+  'Terminado en Desarrollo': { label:'Term. Desarrollo', cat:'EN PROGRESO', bg:'#fffbeb', color:'#b45309', emoji:'🟡' },
+  'Completed in Development':{ label:'Term. Desarrollo', cat:'EN PROGRESO', bg:'#fffbeb', color:'#b45309', emoji:'🟡' },
+  'Rechazada':     { label:'Rechazada',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
+  'Rejected':      { label:'Rechazada',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
+  // COMPLETADO
+  'Terminado en QA':  { label:'Term. en QA',           cat:'COMPLETADO',  bg:'#fefce8', color:'#a16207', emoji:'🟡' },
+  'Completed in QA':  { label:'Term. en QA',           cat:'COMPLETADO',  bg:'#fefce8', color:'#a16207', emoji:'🟡' },
+  'En Pruebas SDM':   { label:'En Pruebas SDM',        cat:'COMPLETADO',  bg:'#ecfdf5', color:'#047857', emoji:'🟢' },
+  'In SDM Testing':   { label:'En Pruebas SDM',        cat:'COMPLETADO',  bg:'#ecfdf5', color:'#047857', emoji:'🟢' },
+  'Aprobado por SDM': { label:'Aprobado SDM',          cat:'COMPLETADO',  bg:'#e0f2fe', color:'#0369a1', emoji:'🔵' },
+  'Approved by SDM':  { label:'Aprobado SDM',          cat:'COMPLETADO',  bg:'#e0f2fe', color:'#0369a1', emoji:'🔵' },
+  'Despliegue Piloto':{ label:'Despliegue Piloto',      cat:'COMPLETADO',  bg:'#fef3c7', color:'#78350f', emoji:'🟤' },
+  'Pilot Deployment': { label:'Despliegue Piloto',      cat:'COMPLETADO',  bg:'#fef3c7', color:'#78350f', emoji:'🟤' },
+  'Piloto Aprobado':  { label:'Piloto Aprobado',        cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+  'Pilot Approved':   { label:'Piloto Aprobado',        cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+  'Finalizado':    { label:'Finalizado',               cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+  'Done':          { label:'Finalizado',               cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+};
+
+const PRIORITY_MAP = {
+  '1': { label:'Muy Alta', cls:'pri-1' },
+  '2': { label:'Alta',     cls:'pri-2' },
+  '3': { label:'Media',    cls:'pri-3' },
+  '4': { label:'Baja',     cls:'pri-4' },
+  '5': { label:'Mínima',   cls:'pri-5' },
+};
+
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+let allTasks      = [];
+let activeSprint  = null;
+let activeFilter  = 'ALL';
+let searchQuery   = '';
+let reportDate    = null;   // Fecha Reporte del último CSV importado
+const LS_KEY      = 'sdm_sheets_url';
+
+// ── URLs por defecto (hardcodeadas) ──────────────────────────────────────────
+// Si no hay URL guardada en localStorage, se usan estas automáticamente.
+// Para cambiar la fuente de datos, usa el ícono ⚙️ en el dashboard.
+const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?output=csv';
+const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=2142401314&single=true&output=csv';
+
+// ══════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════
+function parseSprintName(s) {
+  if (!s) return null;
+  const m = s.match(/^(.+?)\s*\(/);
+  const name = (m ? m[1] : s).trim();
+  return name || null;
+}
+
+function sprintNumber(name) {
+  const m = name && name.match(/(\d+)/);
+  return m ? parseInt(m[1]) : 999;
+}
+
+function parseProjects(s) {
+  if (!s) return [];
+  return s.split(',').map(p => {
+    const m = p.match(/^(.+?)\s*\(/);
+    return (m ? m[1] : p).trim();
+  }).filter(Boolean);
+}
+
+function parsePriority(s) {
+  if (!s) return null;
+  const m = s.match(/^(\d)/);
+  return m ? PRIORITY_MAP[m[1]] : null;
+}
+
+// Índice case-insensitive del STATUS_MAP (se construye una sola vez)
+const STATUS_MAP_LOWER = Object.fromEntries(
+  Object.entries(STATUS_MAP).map(([k, v]) => [k.toLowerCase(), v])
+);
+function getStatus(s) {
+  if (!s) return { label: 'Sin estado', cat: 'PENDIENTE', bg: '#f1f5f9', color: '#64748b', emoji: '⚪' };
+  const t = s.trim();
+  return STATUS_MAP[t] || STATUS_MAP_LOWER[t.toLowerCase()] || { label: t, cat: 'PENDIENTE', bg: '#f1f5f9', color: '#64748b', emoji: '⚪' };
+}
+
+function formatDate(s) {
+  if (!s) return null;
+  // Try to parse Spanish date "26 de enero de 2026 12:29"
+  const mES = s.match(/(\d+)\s+de\s+(\w+)\s+de\s+(\d{4})/i);
+  const monthES = { enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,octubre:9,noviembre:10,diciembre:11 };
+  if (mES) {
+    const d = new Date(parseInt(mES[3]), monthES[mES[2].toLowerCase()], parseInt(mES[1]));
+    return d;
+  }
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+function displayDate(d) {
+  if (!d) return null;
+  return d.toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function isOverdue(d) {
+  if (!d) return false;
+  return d < new Date() && d.setHours(0,0,0,0) < new Date().setHours(0,0,0,0);
+}
+
+// Parsea la Fecha Reporte del usuario (varios formatos posibles)
+function parseFechaReporte(s) {
+  if (!s) return null;
+  s = s.trim();
+  // yyyy-mm-dd o yyyy/mm/dd
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  // dd/mm/yyyy o dd-mm-yyyy
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+  // mm/dd/yyyy (Google Sheets en-US)
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) {
+    // Heurística: si el primer número > 12, es día
+    if (+m[1] > 12) return new Date(+m[3], +m[2]-1, +m[1]);
+    return new Date(+m[3], +m[1]-1, +m[2]);
+  }
+  // "26 de enero de 2026"
+  return formatDate(s);
+}
+
+function parseRow(rowObj) {
+  // rowObj es un objeto {header: valor} generado por PapaParse con header:true
+  // Búsqueda flexible: exacta → case-insensitive → alias
+  const ALIASES = {
+    'Status':         ['estado','Estado','STATUS','status'],
+    'Sprint SDM':     ['sprint sdm','SPRINT SDM','sprint_sdm','SprintSDM'],
+    'Descripción':    ['descripcion','Descripcion','description','Description','Descripción'],
+    'Propiedad':      ['propiedad','id','ID'],
+    'Priority':       ['priority','prioridad','Prioridad','PRIORITY'],
+    'Proyecto':       ['proyecto','project','Project'],
+    'Due':            ['due','fecha limite','Fecha límite','due date','Due Date'],
+    'Fecha Reporte':  ['fecha reporte','fecha_reporte','FechaReporte','Fecha Reporte'],
+    'En producción?': ['en producción?','en produccion?','En produccion?','en producción','produccion','En producción?'],
+    'Last edited time':['last edited time','Last Edited Time','last_edited_time'],
+  };
+  const keys = Object.keys(rowObj);
+  const keysLower = keys.map(k => k.toLowerCase());
+  const get = name => {
+    // 1. Exact match
+    if (rowObj[name] !== undefined) return (rowObj[name] || '').trim();
+    // 2. Case-insensitive
+    const nl = name.toLowerCase();
+    let idx = keysLower.indexOf(nl);
+    if (idx >= 0) return (rowObj[keys[idx]] || '').trim();
+    // 3. Aliases
+    if (ALIASES[name]) {
+      for (const alias of ALIASES[name]) {
+        idx = keysLower.indexOf(alias.toLowerCase());
+        if (idx >= 0) return (rowObj[keys[idx]] || '').trim();
+      }
+    }
+    return '';
+  };
+  // Solo se usa la columna "Sprint SDM". Se normaliza y valida (rechaza IDs tipo 784, 788).
+  const sprint = normalizeSprintName(get('Sprint SDM')) || null;
+  const status     = getStatus(get('Status'));
+  const projects   = parseProjects(get('Proyecto'));
+  const priority   = parsePriority(get('Priority'));
+  const dueRaw     = get('Due');
+  const dueDate    = formatDate(dueRaw);
+  const fechaRep   = get('Fecha Reporte');
+  // Producción: columna "En producción?" = Sí/Yes, o estado es Despliegue/Piloto/Finalizado
+  const prodRaw = get('En producción?').toLowerCase();
+  const prodByCol = ['sí','si','yes','true','1'].includes(prodRaw);
+  const prodByStatus = ['Despliegue Piloto','Piloto Aprobado','Finalizado'].includes(status.label) ||
+                       ['Despliegue Piloto','Piloto Aprobado','Finalizado'].includes(get('Status').trim());
+  return {
+    id:          get('Propiedad'),
+    name:        get('Descripción'),
+    sprint,
+    status,
+    projects,
+    priority,
+    dueDate,
+    dueFmt:      displayDate(dueDate),
+    overdue:     isOverdue(dueDate),
+    lastEdit:    get('Last edited time'),
+    fechaReporte: fechaRep,
+    enProduccion: prodByCol || prodByStatus,
+  };
+}
+
+// ══════════════════════════════════════════════
+//  RENDER
+// ══════════════════════════════════════════════
+function renderSprints() {
+  const sprints = [...new Set(allTasks.map(t => t.sprint).filter(Boolean))]
+    .sort((a,b) => sprintNumber(a) - sprintNumber(b));
+
+  // Detect "current" sprint = highest number with non-done tasks
+  const hasPending = s => allTasks.filter(t => t.sprint === s).some(t => t.status.cat !== 'COMPLETADO');
+  const currentSprint = [...sprints].reverse().find(hasPending) || sprints[sprints.length - 1];
+
+  if (!activeSprint || !sprints.includes(activeSprint)) {
+    activeSprint = currentSprint || sprints[0];
+  }
+
+  const nav = document.getElementById('sprint-nav');
+  nav.innerHTML = sprints.map(s => `
+    <button class="sprint-tab ${s === activeSprint ? 'active' : ''} ${s === currentSprint ? 'current' : ''}"
+            data-sprint="${s}">${s}</button>
+  `).join('');
+
+  nav.querySelectorAll('.sprint-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeSprint = btn.dataset.sprint;
+      renderSprints();
+      renderStats();
+      updateSprintInfoBar();
+      renderCarryOver();
+      renderCards();
+      renderCharts();
+    });
+  });
+}
+
+function getFilteredTasks() {
+  return allTasks.filter(t => {
+    if (t.sprint !== activeSprint) return false;
+    if (activeFilter === 'BLOQUEADO') {
+      if (t.status.label !== 'Bloqueado') return false;
+    } else if (activeFilter !== 'ALL' && t.status.cat !== activeFilter) {
+      return false;
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const inName = t.name.toLowerCase().includes(q);
+      const inProj = t.projects.some(p => p.toLowerCase().includes(q));
+      const inStatus = t.status.label.toLowerCase().includes(q);
+      if (!inName && !inProj && !inStatus) return false;
+    }
+    return true;
+  });
+}
+
+function renderStats() {
+  const sprint   = allTasks.filter(t => t.sprint === activeSprint);
+  const total    = sprint.length;
+  const done     = sprint.filter(t => t.status.cat === 'COMPLETADO').length;
+  // En progreso + Definición + Pendiente (todo lo no completado)
+  const prog     = sprint.filter(t => t.status.cat === 'EN PROGRESO' || t.status.cat === 'PENDIENTE').length;
+  const blocked  = sprint.filter(t => t.status.label === 'Bloqueado').length;
+  const prod     = sprint.filter(t => t.enProduccion).length;
+  const pct      = total ? Math.round(done / total * 100) : 0;
+  const pctProg  = total ? Math.round(prog / total * 100) : 0;
+  const pctProd  = total ? Math.round(prod / total * 100) : 0;
+
+  document.getElementById('stat-total').textContent    = total;
+  document.getElementById('stat-done').textContent     = done;
+  document.getElementById('stat-sub-done').textContent = pct + '% del sprint';
+  document.getElementById('stat-pct-bar').style.width  = pct + '%';
+  document.getElementById('stat-progress').textContent  = prog;
+  document.getElementById('stat-sub-progress').textContent = pctProg + '% del sprint';
+  document.getElementById('stat-blocked').textContent   = blocked;
+  document.getElementById('stat-prod').textContent      = prod;
+  document.getElementById('stat-sub-prod').textContent  = pctProd + '% del total';
+
+  // Highlight blocked card
+  document.querySelector('.stat-card.blocked').style.background =
+    blocked > 0 ? '#fff5f5' : '#fff';
+
+  document.getElementById('count-all').textContent      = total;
+  document.getElementById('count-pendiente').textContent = sprint.filter(t=>t.status.cat==='PENDIENTE').length;
+  document.getElementById('count-progreso').textContent  = sprint.filter(t=>t.status.cat==='EN PROGRESO').length;
+  document.getElementById('count-bloqueado').textContent = sprint.filter(t=>t.status.label==='Bloqueado').length;
+  document.getElementById('count-completado').textContent = done;
+}
+
+function catClass(cat) {
+  return cat === 'PENDIENTE' ? 'cat-pendiente' : cat === 'EN PROGRESO' ? 'cat-en-progreso' : 'cat-completado';
+}
+
+// ─── Dispatches to card or list view ───
+let viewMode = 'list';   // 'cards' | 'list'
+let sortCol  = 'project';  // orden por defecto: proyecto
+let sortAsc  = true;
+
+function renderCards() {
+  viewMode === 'list' ? renderList() : renderCardGrid();
+}
+
+// ─── CARDS GRID ───
+function renderCardGrid() {
+  const tasks = getFilteredTasks();
+  const view  = document.getElementById('task-view');
+
+  if (tasks.length === 0) {
+    view.innerHTML = `<div class="empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 13h4"/>
+      </svg>
+      <p>No hay tareas con los filtros seleccionados</p>
+    </div>`;
+    return;
+  }
+
+  const grid = `<div class="cards-grid">${tasks.map(t => {
+    const s = t.status;
+    const projBadges = t.projects.slice(0,2).map(p =>
+      `<span class="module-badge">${escHtml(p)}</span>`).join('');
+    const priHTML  = t.priority ? `<span class="priority-badge ${t.priority.cls}">${t.priority.label}</span>` : '';
+    const dateHTML = t.dueFmt
+      ? `<span class="task-date ${t.overdue && s.cat !== 'COMPLETADO' ? 'overdue' : ''}">📅 ${t.dueFmt}${t.overdue && s.cat !== 'COMPLETADO' ? ' ⚠️' : ''}</span>`
+      : '';
+    const idHTML   = t.id ? `<span class="task-id">#${t.id}</span>` : '';
+    return `<div class="task-card ${catClass(s.cat)}">
+      <div class="task-header">${idHTML}<div class="task-name">${escHtml(t.name)}</div></div>
+      ${projBadges ? `<div class="task-module">${projBadges}</div>` : ''}
+      <div class="task-footer">
+        <span class="status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span>
+        ${priHTML}${dateHTML}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+  view.innerHTML = grid;
+}
+
+// ─── LIST / TABLE ───
+function renderList() {
+  let tasks = getFilteredTasks();
+  const view = document.getElementById('task-view');
+
+  if (tasks.length === 0) {
+    view.innerHTML = `<div class="empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 13h4"/>
+      </svg>
+      <p>No hay tareas con los filtros seleccionados</p>
+    </div>`;
+    return;
+  }
+
+  // Sort
+  tasks = [...tasks].sort((a,b) => {
+    let va, vb;
+    if (sortCol === 'id')      { va = a.id||'';              vb = b.id||''; }
+    if (sortCol === 'name')    { va = a.name||'';            vb = b.name||''; }
+    if (sortCol === 'project') { va = (a.projects[0]||'').toLowerCase(); vb = (b.projects[0]||'').toLowerCase(); }
+    if (sortCol === 'status')  { va = a.status.label;        vb = b.status.label; }
+    if (sortCol === 'priority'){ va = a.priority?.label||''; vb = b.priority?.label||''; }
+    if (sortCol === 'due')     { va = a.dueDate||new Date(0);vb = b.dueDate||new Date(0); }
+    if (sortCol === 'corte')   { va = a.fechaReporte||'';    vb = b.fechaReporte||''; }
+    if (va === undefined) return 0;
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ?  1 : -1;
+    return 0;
+  });
+
+  const arrow = col => {
+    if (sortCol !== col) return '<span class="sort-arrow">↕</span>';
+    return `<span class="sort-arrow">${sortAsc ? '↑' : '↓'}</span>`;
+  };
+
+  view.innerHTML = `<div class="task-table-wrap">
+    <table class="task-table">
+      <thead>
+        <tr>
+          <th data-sort="id" style="width:52px"># ${arrow('id')}</th>
+          <th data-sort="name">Tarea ${arrow('name')}</th>
+          <th data-sort="project">Proyecto ${arrow('project')}</th>
+          <th data-sort="status">Estado ${arrow('status')}</th>
+          <th data-sort="priority">Prioridad ${arrow('priority')}</th>
+          <th data-sort="due">Fecha límite ${arrow('due')}</th>
+          <th data-sort="corte">Corte ${arrow('corte')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tasks.map(t => {
+          const s = t.status;
+          const projs = t.projects.map(p => `<span class="tbl-proj-badge">${escHtml(p)}</span>`).join('');
+          const pri   = t.priority ? `<span class="tbl-pri-badge priority-badge ${t.priority.cls}">${t.priority.label}</span>` : '—';
+          const due   = t.dueFmt
+            ? `<span class="${t.overdue && s.cat !== 'COMPLETADO' ? 'overdue' : ''}">${t.dueFmt}${t.overdue && s.cat !== 'COMPLETADO' ? ' ⚠️' : ''}</span>`
+            : '<span style="color:#cbd5e1">—</span>';
+          return `<tr>
+            <td class="col-id">${t.id ? '#'+escHtml(t.id) : ''}</td>
+            <td class="col-name">${escHtml(t.name)}</td>
+            <td class="col-project">${projs || '<span style="color:#cbd5e1">—</span>'}</td>
+            <td class="col-status"><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
+            <td>${pri}</td>
+            <td class="col-date">${due}</td>
+            <td class="col-date">${escHtml(t.fechaReporte||'') || '<span style="color:#cbd5e1">—</span>'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`;
+
+  // Column sort headers
+  view.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      if (sortCol === col) sortAsc = !sortAsc;
+      else { sortCol = col; sortAsc = true; }
+      renderList();
+    });
+  });
+}
+
+// ─── EXPORT TO EXCEL ───
+function exportToExcel() {
+  const tasks = getFilteredTasks();
+  if (!tasks.length) { toast('⚠️ No hay tareas para exportar'); return; }
+
+  const rows = [
+    ['#ID', 'Tarea', 'Proyecto', 'Estado', 'Categoría', 'Prioridad', 'Fecha límite', 'Corte', 'Sprint'],
+    ...tasks.map(t => [
+      t.id || '',
+      t.name,
+      t.projects.join(', '),
+      t.status.label,
+      t.status.cat,
+      t.priority?.label || '',
+      t.dueFmt || '',
+      t.fechaReporte || '',
+      t.sprint || '',
+    ])
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Column widths
+  ws['!cols'] = [8, 42, 28, 20, 14, 12, 14, 14, 12].map(w => ({ wch: w }));
+
+  XLSX.utils.book_append_sheet(wb, ws, activeSprint || 'Sprint');
+  const filename = `SDM_${(activeSprint||'sprint').replace(/\s+/g,'-')}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  toast('✅ Exportado como ' + filename);
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function updateTimestamp() {
+  const now = new Date();
+  document.getElementById('update-time').textContent =
+    'Cargado: ' + now.toLocaleTimeString('es-CO', { hour:'2-digit', minute:'2-digit' });
+  const rdEl = document.getElementById('report-date');
+  if (reportDate) {
+    rdEl.textContent = '📋 Reporte: ' + reportDate;
+  } else {
+    rdEl.textContent = '';
+  }
+}
+
+// ══════════════════════════════════════════════
+//  CHARTS
+// ══════════════════════════════════════════════
+let chartDonut = null, chartPriority = null, chartProd = null,
+    chartProject = null, chartSprint = null;
+
+function destroyCharts() {
+  [chartDonut, chartPriority, chartProd, chartProject, chartSprint].forEach(c => c && c.destroy());
+  chartDonut = chartPriority = chartProd = chartProject = chartSprint = null;
+}
+
+const chartDefaults = {
+  maintainAspectRatio: false,
+  animation: { duration: 400 },
+};
+
+function renderCharts() {
+  if (typeof Chart === 'undefined') return;
+  destroyCharts();
+
+  const st    = allTasks.filter(t => t.sprint === activeSprint);
+  const total = st.length;
+  const done  = st.filter(t => t.status.cat === 'COMPLETADO').length;
+  const prog  = st.filter(t => t.status.cat === 'EN PROGRESO').length;
+  const pend  = st.filter(t => t.status.cat === 'PENDIENTE').length;
+  const prod  = st.filter(t => t.enProduccion).length;
+
+  // ── 1. Estado de tareas (donut: Completada / En progreso / Pendiente) ──
+  document.getElementById('donut-center-val').textContent = total;
+  chartDonut = new Chart(document.getElementById('chart-donut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Completada', 'En progreso', 'Pendiente'],
+      datasets: [{ data:[done, prog, pend],
+        backgroundColor:['#4ade80','#60a5fa','#fbbf24'],
+        borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
+    },
+    options: { ...chartDefaults, cutout:'68%',
+      plugins: {
+        legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
+        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total?Math.round(c.parsed/total*100):0}%)` } }
+      }
+    }
+  });
+
+  // ── 2. Distribución por prioridad (pie) ──
+  const priCounts = {};
+  st.forEach(t => {
+    const lbl = t.priority?.label || 'Sin prioridad';
+    priCounts[lbl] = (priCounts[lbl]||0)+1;
+  });
+  const priOrder = ['Muy Alta','Alta','Media','Baja','Mínima','Sin prioridad'];
+  const priLabels = priOrder.filter(l => priCounts[l]);
+  const priColors = { 'Muy Alta':'#ef4444','Alta':'#f97316','Media':'#facc15','Baja':'#4ade80','Mínima':'#94a3b8','Sin prioridad':'#cbd5e1' };
+  chartPriority = new Chart(document.getElementById('chart-priority'), {
+    type: 'doughnut',
+    data: {
+      labels: priLabels,
+      datasets: [{ data: priLabels.map(l=>priCounts[l]),
+        backgroundColor: priLabels.map(l=>priColors[l]||'#94a3b8'),
+        borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
+    },
+    options: { ...chartDefaults, cutout:'0%',
+      plugins: {
+        legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
+        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total?Math.round(c.parsed/total*100):0}%)` } }
+      }
+    }
+  });
+
+  // ── 3. En producción (donut con % en centro) ──
+  const pendDeploy = st.filter(t => ['Aprobado SDM','En Pruebas SDM','Term. en QA'].includes(t.status.label)).length;
+  const inProgress = total - prod - pendDeploy;
+  const pctProd = total ? Math.round(prod/total*100) : 0;
+  document.getElementById('prod-center-val').textContent = pctProd + '%';
+  chartProd = new Chart(document.getElementById('chart-prod'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Desplegadas en prod.','Pendientes despliegue','En progreso'],
+      datasets: [{ data:[prod, pendDeploy, inProgress],
+        backgroundColor:['#4ade80','#fbbf24','#60a5fa'],
+        borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
+    },
+    options: { ...chartDefaults, cutout:'65%',
+      plugins: {
+        legend:{ position:'bottom', labels:{ font:{size:10}, padding:6, boxWidth:10 } },
+        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed}` } }
+      }
+    }
+  });
+
+  // ── 4. Tareas por proyecto (horizontal bar) ──
+  const projCounts = {};
+  st.forEach(t => t.projects.forEach(p => { projCounts[p]=(projCounts[p]||0)+1; }));
+  const projEntries = Object.entries(projCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  chartProject = new Chart(document.getElementById('chart-project'), {
+    type: 'bar',
+    data: {
+      labels: projEntries.map(([p])=>p),
+      datasets:[{ label:'Tareas', data:projEntries.map(([,c])=>c),
+        backgroundColor:'#3b82f6', borderRadius:4 }]
+    },
+    options: { ...chartDefaults, indexAxis:'y',
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.parsed.x} tareas`}} },
+      scales:{
+        x:{ticks:{stepSize:1,font:{size:11}}, grid:{color:'#f0f4f8'}},
+        y:{ticks:{font:{size:10}}, grid:{display:false}}
+      }
+    }
+  });
+
+  // ── 5. Comparativo entre sprints (stacked bar, full width) ──
+  const allSprints = [...new Set(allTasks.map(t=>t.sprint).filter(Boolean))]
+    .sort((a,b)=>sprintNumber(a)-sprintNumber(b));
+  const byS = cat => allSprints.map(s=>allTasks.filter(t=>t.sprint===s&&t.status.cat===cat).length);
+  chartSprint = new Chart(document.getElementById('chart-sprint'), {
+    type: 'bar',
+    data: {
+      labels: allSprints,
+      datasets: [
+        { label:'Pendiente',   data:byS('PENDIENTE'),   backgroundColor:'#fbbf24', borderRadius:3 },
+        { label:'En Progreso', data:byS('EN PROGRESO'), backgroundColor:'#60a5fa', borderRadius:3 },
+        { label:'Completado',  data:byS('COMPLETADO'),  backgroundColor:'#4ade80', borderRadius:3 },
+      ]
+    },
+    options: { ...chartDefaults,
+      plugins:{ legend:{position:'bottom', labels:{font:{size:11},padding:10,boxWidth:10}} },
+      scales:{
+        x:{stacked:true, ticks:{font:{size:11}}, grid:{display:false}},
+        y:{stacked:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'#f0f4f8'}}
+      }
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  CARRY-OVER: tareas que pasan de sprint anterior al activo
+// ══════════════════════════════════════════════
+function renderCarryOver() {
+  const section = document.getElementById('carryover-section');
+
+  // Ordenar sprints para hallar el anterior al activo
+  const sprints = [...new Set(allTasks.map(t => t.sprint).filter(Boolean))]
+    .sort((a,b) => sprintNumber(a) - sprintNumber(b));
+  const activeIdx  = sprints.indexOf(activeSprint);
+  const prevSprint = activeIdx > 0 ? sprints[activeIdx - 1] : null;
+
+  if (!prevSprint) { section.style.display = 'none'; return; }
+
+  // IDs que existen tanto en el sprint anterior como en el activo
+  const prevIds   = new Set(allTasks.filter(t => t.sprint === prevSprint && t.id).map(t => t.id));
+  const carryover = allTasks.filter(t => t.sprint === activeSprint && t.id && prevIds.has(t.id));
+
+  if (!carryover.length) { section.style.display = 'none'; return; }
+
+  section.style.display = 'block';
+  document.getElementById('carryover-title').textContent =
+    `🔄 Tareas que continúan de ${prevSprint} → ${activeSprint}`;
+  document.getElementById('carryover-badge').textContent = carryover.length;
+
+  const list = document.getElementById('carryover-list');
+  list.innerHTML = `<table class="carryover-table">
+    <thead>
+      <tr>
+        <th>#ID</th>
+        <th>Tarea</th>
+        <th>Proyecto</th>
+        <th>Estado en ${prevSprint}</th>
+        <th>Estado actual</th>
+        <th>Prioridad</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${carryover.map(t => {
+        // Buscar estado que tenía en el sprint anterior
+        const prevRecord = allTasks.find(x => x.sprint === prevSprint && x.id === t.id);
+        const prevStatus = prevRecord ? prevRecord.status : null;
+        const s = t.status;
+        return `<tr>
+          <td style="color:#94a3b8;font-size:11px">${t.id ? '#'+escHtml(t.id) : ''}</td>
+          <td style="font-weight:600">${escHtml(t.name)}</td>
+          <td>${t.projects.slice(0,1).map(p=>`<span class="tbl-proj-badge">${escHtml(p)}</span>`).join('')}</td>
+          <td>${prevStatus
+            ? `<span class="tbl-status-badge" style="background:${prevStatus.bg};color:${prevStatus.color}">${prevStatus.emoji} ${prevStatus.label}</span>`
+            : '<span style="color:#94a3b8">—</span>'}</td>
+          <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
+          <td>${t.priority ? `<span class="tbl-pri-badge priority-badge ${t.priority.cls}">${t.priority.label}</span>` : '—'}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+// ─── Sprint info bar ──────────────────────────────────────────────────────────
+function updateSprintInfoBar() {
+  const bar = document.getElementById('sprint-info-bar');
+  if (!bar) return;
+
+  const cfgRaw = localStorage.getItem(LS_CFG_DATA);
+  const cfg = cfgRaw ? JSON.parse(cfgRaw) : [];
+  const entry = cfg.find(c => c.sprint === activeSprint);
+
+  if (!entry || !entry.start) {
+    bar.style.display = 'none';
+    return;
+  }
+
+  const startDate = parseConfigDate(entry.start);
+  const endDate   = parseConfigDate(entry.end);
+  const today     = new Date(); today.setHours(0,0,0,0);
+
+  // (Sprint label eliminado — ya se muestra en las pestañas)
+
+  // Período
+  const fmtDate = d => d
+    ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric' })
+    : '—';
+  document.getElementById('sib-period').textContent =
+    (startDate && endDate) ? `${fmtDate(startDate)} – ${fmtDate(endDate)}` : '—';
+
+  // Corte (última fecha de reporte en los datos del sprint activo)
+  const sprintTasks = allTasks.filter(t => t.sprint === activeSprint && t.fechaReporte);
+  let corteDate = null;
+  if (sprintTasks.length) {
+    const sorted = sprintTasks
+      .map(t => parseFechaReporte(t.fechaReporte))
+      .filter(Boolean)
+      .sort((a, b) => b - a);
+    corteDate = sorted[0] || null;
+  }
+  const sibCorte = document.getElementById('sib-corte');
+  sibCorte.textContent = corteDate ? corteDate.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric' }) : '—';
+
+  // Días hábiles transcurridos (inicio → hoy o fin si sprint ya terminó)
+  const elEl = document.getElementById('sib-elapsed');
+  const remEl = document.getElementById('sib-remaining');
+
+  if (startDate && endDate) {
+    const effectiveToday = today > endDate ? endDate : today;
+    const elapsed  = startDate <= effectiveToday ? countWorkingDays(startDate, effectiveToday) : 0;
+    const total    = countWorkingDays(startDate, endDate);
+    let remFinal = 0;
+    if (today < endDate) {
+      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+      remFinal = countWorkingDays(tomorrow, endDate);
+    }
+
+    elEl.textContent  = `${elapsed} día${elapsed !== 1 ? 's' : ''} de ${total}`;
+    remEl.textContent = remFinal === 0 ? '0 — Finalizado' : `${remFinal} día${remFinal !== 1 ? 's' : ''}`;
+
+    // Color según días restantes
+    elEl.className  = 'sprint-info-val';
+    remEl.className = 'sprint-info-val ' + (remFinal === 0 ? 'late' : remFinal <= 2 ? 'warn' : 'ok');
+  } else {
+    elEl.textContent  = '—';
+    remEl.textContent = '—';
+    elEl.className = remEl.className = 'sprint-info-val';
+  }
+
+  bar.style.display = 'flex';
+}
+
+function renderAll() {
+  renderSprints();
+  renderStats();
+  updateSprintInfoBar();
+  renderCarryOver();
+  renderCards();
+  renderCharts();
+  updateTimestamp();
+}
+
+// ══════════════════════════════════════════════
+//  DATA LOADING
+// ══════════════════════════════════════════════
+function processCSV(csvText) {
+  const result = Papa.parse(csvText, {
+    header: true,           // PapaParse genera objetos {col: valor} — maneja comas en campos automáticamente
+    skipEmptyLines: true,
+    transformHeader: h => (h || '').replace(/^﻿/, '').trim(),  // limpia BOM y espacios
+  });
+  const rows = result.data;
+  if (!rows || rows.length < 1) throw new Error('CSV vacío o inválido');
+  const parsed = rows
+    .map(row => parseRow(row))
+    .filter(t => t.name);  // solo excluimos filas sin nombre
+
+  // ── Deduplicar POR (sprint, tarea): cada tarea puede aparecer en varios
+  //    sprints (cuando pasa de un sprint al siguiente), y en cada sprint
+  //    conservamos solo su registro más reciente para ese sprint.
+  //    Clave = sprint + "||" + id_de_tarea
+  //    Resultado: Sprint 2 muestra sus 17 tareas aunque 5 hayan pasado al Sprint 3.
+  const taskMap = new Map();
+  parsed.forEach(task => {
+    if (!task.sprint) return;   // sin Sprint SDM → no aparece en ninguna pestaña
+    const key = task.sprint + '||' + (task.id || task.name);
+    const existing = taskMap.get(key);
+    if (!existing) {
+      taskMap.set(key, task);
+    } else {
+      const dExist = parseFechaReporte(existing.fechaReporte);
+      const dNew   = parseFechaReporte(task.fechaReporte);
+      if (!dExist || (dNew && dNew >= dExist)) {
+        taskMap.set(key, task);
+      }
+    }
+  });
+
+  allTasks = [...taskMap.values()];
+
+  // Fecha del reporte más reciente del conjunto completo
+  const fechas = parsed
+    .map(t => parseFechaReporte(t.fechaReporte))
+    .filter(Boolean);
+  const latestDate = fechas.length
+    ? new Date(Math.max(...fechas.map(d => d.getTime())))
+    : null;
+  reportDate = latestDate
+    ? latestDate.toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' })
+    : null;
+
+  // Persistir corte para mostrarlo en la landing en futuras visitas
+  if (reportDate) localStorage.setItem(LS_CORTE, reportDate);
+
+  // Detectar sprint actual y persistirlo
+  const sprints = [...new Set(allTasks.map(t => t.sprint).filter(Boolean))]
+    .sort((a,b) => sprintNumber(a) - sprintNumber(b));
+  const hasPendingTasks = s => allTasks.filter(t => t.sprint === s).some(t => t.status.cat !== 'COMPLETADO');
+  const detectedSprint  = [...sprints].reverse().find(hasPendingTasks) || sprints[sprints.length - 1];
+  if (detectedSprint) localStorage.setItem(LS_SPRINT_NOW, detectedSprint);
+
+  renderAll();
+}
+
+function showLoading(show) {
+  document.getElementById('loading').classList.toggle('hidden', !show);
+}
+
+function toast(msg, ms = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// Wrapper: descarga un CSV remoto usando PapaParse (maneja CORS y redirects de Google Sheets)
+function downloadCSV(url) {
+  return new Promise((resolve, reject) => {
+    Papa.parse(url, {
+      download: true,
+      skipEmptyLines: true,
+      complete: results => resolve(results.data.map(r => r.join(',')).join('\n')),
+      error: err => reject(err),
+    });
+  });
+}
+
+async function loadFromURL(url) {
+  showLoading(true);
+  try {
+    let text;
+    try {
+      // Intento 1: PapaParse download (mejor para Google Sheets – maneja redirects)
+      text = await downloadCSV(url);
+    } catch {
+      // Intento 2: fetch directo como fallback
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      text = await resp.text();
+    }
+
+    processCSV(text);
+    localStorage.setItem(LS_KEY, url);
+
+    // Cargar pestaña de config (Hoja 2) si hay URL guardada
+    const cfgUrl = localStorage.getItem(LS_CFG_URL);
+    if (cfgUrl) {
+      try {
+        let cfgText;
+        try {
+          cfgText = await downloadCSV(cfgUrl);
+        } catch {
+          const r = await fetch(cfgUrl);
+          if (r.ok) cfgText = await r.text();
+        }
+        if (cfgText) {
+          const cfg = processConfigCSV(cfgText);
+          localStorage.setItem(LS_CFG_DATA, JSON.stringify(cfg));
+          updateLandingInfo();
+        }
+      } catch { /* config sheet es opcional */ }
+    }
+
+    toast('✅ Datos cargados correctamente');
+  } catch(e) {
+    console.error(e);
+    throw e;
+  } finally {
+    showLoading(false);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  DEMO DATA
+//  Simula el modelo real: reporte anterior + reporte actual (acumulado).
+//  5 tareas que iniciaron en Sprint 2 pasan al Sprint 3 → aparecen en ambas pestañas.
+//  Sprint 2 total: 17 tareas  |  Sprint 3 total: 16 nuevas + 5 carry-over = 21
+// ══════════════════════════════════════════════
+function loadDemo() {
+  const fmt = (d) => {
+    const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return `${d.getDate()} de ${months[d.getMonth()]} de ${d.getFullYear()}`;
+  };
+  const fut  = (days) => { const d = new Date(); d.setDate(d.getDate()+days); return fmt(d); };
+  const past = (days) => { const d = new Date(); d.setDate(d.getDate()-days); return fmt(d); };
+
+  const hoy  = fmt(new Date());
+  const ant  = past(14);  // reporte anterior (14 días)
+  const H = ['Fecha Reporte','Sprint SDM','Descripción','Propiedad','Assignee','Complejidad','Completion','Creado por','Created by','DEV','Due','En producción?','Entorno','Fecha','Fecha de creación','Last edited time','Negocio','Pais','Pantalla','Pantallazo','Parent task','Priority','Proyecto','Pull Request','Repositorio','Responsable (PO)','SA','Sprint','Stakeholder','Status','Sub-task','Summary','Tipo_desarrollo','Version APK','Waiting for'];
+  const r = (fr,sp,desc,id,pri,proy,status,due) =>
+    [fr,sp,desc,id,'','','','','','',due,'','','',past(60),past(30),'','','','','',pri,proy+'(https://example.com)','','','','',sp+' (https://example.com)','',status,'','','','',''];
+
+  // ── REPORTE 1 (hace 14 días) — Sprint 2 completo, Sprint 3 recién abriendo ──
+  // 17 tareas en Sprint 2 · 5 de ellas aún "En desarrollo"
+  const rep1 = [
+    r(ant,'Sprint 2','Implementar captura de evidencias','1001','1. Very high','Core Build & Engine','En desarrollo',past(5)),
+    r(ant,'Sprint 2','Validar campos obligatorios','1002','2. High','Aplicación Mobile','En desarrollo',past(3)),
+    r(ant,'Sprint 2','Diseñar flujo de evidencias','1003','2. High','Visual & Experience','En desarrollo',past(4)),
+    r(ant,'Sprint 2','Configurar entorno de staging','1004','1. Very high','INFRAESTRUCTURA MDM SOTI','En desarrollo',past(6)),
+    r(ant,'Sprint 2','Pruebas unitarias módulo A','1005','3. Medium High','Quality Assurance (QA) & Beta','En desarrollo',past(2)),
+    // Tareas terminadas en Sprint 2
+    r(ant,'Sprint 2','Diseño de base de datos','1006','1. Very high','Core Build & Engine','Finalizado',past(20)),
+    r(ant,'Sprint 2','Autenticación de usuarios','1007','1. Very high','Aplicación Mobile','Finalizado',past(18)),
+    r(ant,'Sprint 2','Pantalla de inicio','1008','2. High','Visual & Experience','Finalizado',past(17)),
+    r(ant,'Sprint 2','Módulo de permisos','1009','1. Very high','Core Build & Engine','Finalizado',past(16)),
+    r(ant,'Sprint 2','API REST base','1010','2. High','Core Build & Engine','Finalizado',past(15)),
+    r(ant,'Sprint 2','Prototipo navegable','1011','3. Medium High','Visual & Experience','Finalizado',past(14)),
+    r(ant,'Sprint 2','Configurar CI/CD base','1012','2. High','INFRAESTRUCTURA MDM SOTI','Finalizado',past(14)),
+    r(ant,'Sprint 2','Integración SSO','1013','1. Very high','Aplicación Mobile','Finalizado',past(13)),
+    r(ant,'Sprint 2','Test de carga inicial','1014','2. High','Quality Assurance (QA) & Beta','Finalizado',past(12)),
+    r(ant,'Sprint 2','Documentación API v1','1015','3. Medium High','Documentación','Finalizado',past(11)),
+    r(ant,'Sprint 2','Gestión de sesiones','1016','2. High','Aplicación Mobile','Finalizado',past(10)),
+    r(ant,'Sprint 2','Esquema de notificaciones','1017','4. Medium Low','Aplicación Mobile','Definición',past(3)),
+  ];
+
+  // ── REPORTE 2 (hoy) — Sprint 2 cerrado + Sprint 3 activo ──
+  // Las 5 tareas "En desarrollo" del Sprint 2 pasaron al Sprint 3 (carry-over)
+  // Sprint 3 tiene 16 tareas nuevas + 5 carry-over = 21
+  const rep2 = [
+    // Sprint 2 — versión final (12 tareas cerradas, las 5 carry-over ya no se reportan aquí)
+    r(hoy,'Sprint 2','Diseño de base de datos','1006','1. Very high','Core Build & Engine','Finalizado',past(20)),
+    r(hoy,'Sprint 2','Autenticación de usuarios','1007','1. Very high','Aplicación Mobile','Finalizado',past(18)),
+    r(hoy,'Sprint 2','Pantalla de inicio','1008','2. High','Visual & Experience','Finalizado',past(17)),
+    r(hoy,'Sprint 2','Módulo de permisos','1009','1. Very high','Core Build & Engine','Finalizado',past(16)),
+    r(hoy,'Sprint 2','API REST base','1010','2. High','Core Build & Engine','Finalizado',past(15)),
+    r(hoy,'Sprint 2','Prototipo navegable','1011','3. Medium High','Visual & Experience','Finalizado',past(14)),
+    r(hoy,'Sprint 2','Configurar CI/CD base','1012','2. High','INFRAESTRUCTURA MDM SOTI','Finalizado',past(14)),
+    r(hoy,'Sprint 2','Integración SSO','1013','1. Very high','Aplicación Mobile','Finalizado',past(13)),
+    r(hoy,'Sprint 2','Test de carga inicial','1014','2. High','Quality Assurance (QA) & Beta','Finalizado',past(12)),
+    r(hoy,'Sprint 2','Documentación API v1','1015','3. Medium High','Documentación','Finalizado',past(11)),
+    r(hoy,'Sprint 2','Gestión de sesiones','1016','2. High','Aplicación Mobile','Finalizado',past(10)),
+    r(hoy,'Sprint 2','Esquema de notificaciones','1017','4. Medium Low','Aplicación Mobile','Finalizado',past(3)),
+    // Sprint 3 — 5 carry-over de Sprint 2 (misma Propiedad, ahora Sprint SDM = Sprint 3)
+    r(hoy,'Sprint 3','Implementar captura de evidencias','1001','1. Very high','Core Build & Engine','En desarrollo',fut(5)),
+    r(hoy,'Sprint 3','Validar campos obligatorios','1002','2. High','Aplicación Mobile','Bloqueado',fut(3)),
+    r(hoy,'Sprint 3','Diseñar flujo de evidencias','1003','2. High','Visual & Experience','Terminado en Desarrollo',fut(4)),
+    r(hoy,'Sprint 3','Configurar entorno de staging','1004','1. Very high','INFRAESTRUCTURA MDM SOTI','En Pruebas SDM',fut(6)),
+    r(hoy,'Sprint 3','Pruebas unitarias módulo A','1005','3. Medium High','Quality Assurance (QA) & Beta','Terminado en QA',fut(2)),
+    // Sprint 3 — 16 tareas nuevas
+    r(hoy,'Sprint 3','Implementar módulo de reportes','2001','1. Very high','Módulo reportes','No iniciado',fut(10)),
+    r(hoy,'Sprint 3','Diseñar flujo de notificaciones','2002','2. High','Aplicación Mobile','Definición',fut(14)),
+    r(hoy,'Sprint 3','Validar integración comparendos','2003','1. Very high','Core Build & Engine','En desarrollo',fut(7)),
+    r(hoy,'Sprint 3','Crear API de ubicabilidad','2004','2. High','Módulo Ubicabilidad','En desarrollo',fut(5)),
+    r(hoy,'Sprint 3','Documentar arquitectura','2005','3. Medium High','Documentación','No iniciado',fut(20)),
+    r(hoy,'Sprint 3','Control de acceso por roles','2006','1. Very high','Módulo usuarios','Definición',fut(12)),
+    r(hoy,'Sprint 3','Pruebas de rendimiento','2007','1. Very high','Quality Assurance (QA) & Beta','Terminado en QA',past(2)),
+    r(hoy,'Sprint 3','Pipeline CI/CD avanzado','2008','2. High','INFRAESTRUCTURA MDM SOTI','Aprobado por SDM',fut(3)),
+    r(hoy,'Sprint 3','Documentación usuario final','2009','4. Medium Low','Documentación','No iniciado',fut(18)),
+    r(hoy,'Sprint 3','Sincronización offline','2010','1. Very high','Core Build & Engine','En desarrollo',fut(9)),
+    r(hoy,'Sprint 3','Pantalla de gestión de casos','2011','2. High','Módulo gestión de casos','Finalizado',fut(6)),
+    r(hoy,'Sprint 3','Integración con comparenderas','2012','1. Very high','Core Build & Engine','En desarrollo',fut(8)),
+    r(hoy,'Sprint 3','Dashboard de métricas','2013','2. High','Visual & Experience','No iniciado',fut(15)),
+    r(hoy,'Sprint 3','Migración de datos históricos','2014','1. Very high','Core Build & Engine','Definición',fut(11)),
+    r(hoy,'Sprint 3','Módulo de alertas','2015','2. High','Aplicación Mobile','No iniciado',fut(13)),
+    r(hoy,'Sprint 3','Optimización de consultas DB','2016','3. Medium High','Core Build & Engine','En desarrollo',fut(7)),
+  ];
+
+  // Acumulado (igual que el sheet real): reporte 1 + reporte 2
+  const demoCSV = [H, ...rep1, ...rep2].map(row => row.join(',')).join('\n');
+  processCSV(demoCSV);
+}
+
+// ══════════════════════════════════════════════
+//  LANDING PAGE
+// ══════════════════════════════════════════════
+const LS_CORTE      = 'sdm_last_corte';
+const LS_SPRINT_NOW = 'sdm_current_sprint';
+const LS_CFG_URL    = 'sdm_config_url';
+const LS_CFG_DATA   = 'sdm_sprint_cfg';   // JSON: [{sprint, start, end}, ...]
+
+// ─── Festivos colombianos (Ley 51/1983 – Ley Emiliani) ───────────────────────
+function getEaster(year) {
+  // Anonymous Gregorian algorithm
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31); // 1-based
+  const day   = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+function nextMonday(date) {
+  // If already Monday return same day; else advance to next Monday
+  const d = new Date(date);
+  const dow = d.getDay(); // 0=Sun,1=Mon,...
+  if (dow === 1) return d;
+  const diff = dow === 0 ? 1 : (8 - dow);
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function getColombianHolidays(year) {
+  const fixed = [
+    new Date(year, 0,  1),  // 1 ene  Año Nuevo
+    new Date(year, 4,  1),  // 1 may  Día del Trabajo
+    new Date(year, 6,  20), // 20 jul  Independencia
+    new Date(year, 7,  7),  // 7 ago  Batalla de Boyacá
+    new Date(year, 11, 8),  // 8 dic  Inmaculada Concepción
+    new Date(year, 11, 25), // 25 dic  Navidad
+  ];
+  // Ley Emiliani – se mueven al siguiente lunes
+  const emiliani = [
+    new Date(year, 0,  6),  // 6 ene  Reyes Magos
+    new Date(year, 2,  19), // 19 mar  San José
+    new Date(year, 5,  29), // 29 jun  San Pedro y San Pablo
+    new Date(year, 7,  15), // 15 ago  Asunción de la Virgen
+    new Date(year, 9,  12), // 12 oct  Día de la Raza
+    new Date(year, 10, 1),  // 1 nov  Todos los Santos
+    new Date(year, 10, 11), // 11 nov  Independencia de Cartagena
+  ].map(nextMonday);
+
+  const easter = getEaster(year);
+  const easterOffset = (n) => { const d = new Date(easter); d.setDate(d.getDate() + n); return d; };
+  // Pascua-based: Jueves Santo, Viernes Santo → fijos (no Emiliani)
+  // Ascensión, Corpus Christi, Sagrado Corazón → Emiliani
+  const pascua = [
+    easterOffset(-3),              // Jueves Santo
+    easterOffset(-2),              // Viernes Santo
+    nextMonday(easterOffset(39)),  // Ascensión
+    nextMonday(easterOffset(60)),  // Corpus Christi
+    nextMonday(easterOffset(68)),  // Sagrado Corazón
+  ];
+
+  const all = [...fixed, ...emiliani, ...pascua];
+  // Return as Set of "YYYY-MM-DD" strings for fast lookup
+  return new Set(all.map(d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`));
+}
+
+const _holidayCache = {};
+function isColombianHoliday(date) {
+  const y = date.getFullYear();
+  if (!_holidayCache[y]) _holidayCache[y] = getColombianHolidays(y);
+  const key = `${y}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  return _holidayCache[y].has(key);
+}
+
+function countWorkingDays(d1, d2) {
+  const start = new Date(d1); start.setHours(0,0,0,0);
+  const end   = new Date(d2); end.setHours(0,0,0,0);
+  if (start > end) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6 && !isColombianHoliday(cur)) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+// Parse date: dd/mm/yyyy or yyyy-mm-dd
+function parseConfigDate(s) {
+  if (!s) return null;
+  s = s.trim();
+  let m;
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+  return null;
+}
+
+function updateLandingInfo() {
+  const corte      = localStorage.getItem(LS_CORTE);
+  const sprintNow  = localStorage.getItem(LS_SPRINT_NOW);
+  const cfgRaw     = localStorage.getItem(LS_CFG_DATA);
+  const cfg        = cfgRaw ? JSON.parse(cfgRaw) : [];
+
+  document.getElementById('land-corte').textContent  = corte     || '\u2014';
+  document.getElementById('land-sprint').textContent = sprintNow || '\u2014';
+
+  const entry = cfg.find(r => r.sprint === sprintNow) || cfg[0] || null;
+
+  if (entry && entry.start && entry.end) {
+    const startD = parseConfigDate(entry.start);
+    const endD   = parseConfigDate(entry.end);
+    const fmtShort = d => d
+      ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'short' })
+      : '\u2014';
+
+    document.getElementById('land-period-ini').textContent = fmtShort(startD);
+    document.getElementById('land-period-fin').textContent = '\u2193 ' + fmtShort(endD);
+
+    if (startD && endD) {
+      const today  = new Date(); today.setHours(0,0,0,0);
+      const capEnd = today > endD ? endD : today;
+      const elapsed = countWorkingDays(startD, capEnd);
+      let remaining = 0;
+      if (today < endD) {
+        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+        remaining = countWorkingDays(tomorrow, endD);
+      }
+      document.getElementById('land-elapsed').textContent   = elapsed;
+      document.getElementById('land-remaining').textContent = remaining;
+    }
+  } else {
+    document.getElementById('land-period-ini').textContent = '\u2014';
+    document.getElementById('land-period-fin').textContent = 'sin configurar';
+    document.getElementById('land-elapsed').textContent    = '\u2014';
+    document.getElementById('land-remaining').textContent  = '\u2014';
+  }
+}
+
+// Normaliza nombre de sprint: "2" → "Sprint 2", rechaza IDs tipo 784, 788
+function normalizeSprintName(s) {
+  if (!s) return '';
+  s = s.trim();
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    if (n < 1 || n > 99) return '';
+    return 'Sprint ' + n;
+  }
+  if (/^sprint\s+\d+$/i.test(s)) {
+    const n = parseInt(s.match(/\d+/)[0], 10);
+    if (n < 1 || n > 99) return '';
+    return 'Sprint ' + n;
+  }
+  return s;
+}
+
+// Parsea CSV de config (Hoja 2): Sprint | Inicio | Fin
+function processConfigCSV(csvText) {
+  const result = Papa.parse(csvText, { header: false, skipEmptyLines: true });
+  const rows   = result.data;
+  if (!rows || rows.length < 2) return [];
+  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const iSprint = headers.findIndex(h => h.includes('sprint'));
+  const iStart  = headers.findIndex(h =>
+    h.includes('inicio') || h.includes('ini') || h.includes('start') || h === 'fecha inicio');
+  const iEnd    = headers.findIndex(h =>
+    h.includes('fin') || h.includes('end') || h === 'fecha fin');
+  if (iSprint < 0) return [];
+  return rows.slice(1).map(r => ({
+    sprint: normalizeSprintName((r[iSprint]||'').trim()),
+    start:  iStart >= 0 ? (r[iStart]||'').trim() : '',
+    end:    iEnd   >= 0 ? (r[iEnd]  ||'').trim() : '',
+  })).filter(r => r.sprint);
+}
+
+// ── Botón Ingresar en landing ────────────────────────────────────────────────
+document.getElementById('btn-enter').addEventListener('click', () => {
+  document.getElementById('landing-overlay').classList.add('hidden');
+  // Datos ya precargados en segundo plano
+});
+
+// Actualizar info de la landing con datos guardados
+updateLandingInfo();
+
+// Precargar datos en segundo plano mientras el usuario ve la landing
+(async () => {
+  if (!localStorage.getItem(LS_CFG_URL)) localStorage.setItem(LS_CFG_URL, DEFAULT_CONFIG_URL);
+  const url = localStorage.getItem(LS_KEY) || DEFAULT_DATA_URL;
+  try { await loadFromURL(url); } catch { /* silencioso */ }
+})();
+
+// ══════════════════════════════════════════════
+//  EVENTS
+// ══════════════════════════════════════════════
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  const url = localStorage.getItem(LS_KEY);
+  if (!url) { showSetup(); return; }
+  try {
+    await loadFromURL(url);
+  } catch {
+    toast('\u274c Error al actualizar. Verifica la URL.');
+  }
+});
+
+document.getElementById('config-btn').addEventListener('click', showSetup);
+
+document.getElementById('save-url-btn').addEventListener('click', async () => {
+  const url    = document.getElementById('sheets-url-input').value.trim();
+  const cfgUrl = document.getElementById('config-url-input').value.trim();
+  if (!url) return;
+  if (cfgUrl) localStorage.setItem(LS_CFG_URL, cfgUrl);
+  document.getElementById('setup-error').style.display = 'none';
+  try {
+    await loadFromURL(url);
+    hideSetup();
+  } catch {
+    document.getElementById('setup-error').style.display = 'block';
+  }
+});
+
+document.getElementById('btn-view-cards').addEventListener('click', () => {
+  viewMode = 'cards';
+  document.getElementById('btn-view-cards').classList.add('active');
+  document.getElementById('btn-view-list').classList.remove('active');
+  renderCards();
+});
+document.getElementById('btn-view-list').addEventListener('click', () => {
+  viewMode = 'list';
+  document.getElementById('btn-view-list').classList.add('active');
+  document.getElementById('btn-view-cards').classList.remove('active');
+  renderCards();
+});
+
+document.getElementById('btn-export').addEventListener('click', exportToExcel);
+
+function exportToPDF() {
+  const tasks = getFilteredTasks();
+  if (!tasks.length) { toast('\u26a0\ufe0f No hay tareas para exportar'); return; }
+  if (viewMode !== 'list') { viewMode = 'list'; renderCards(); }
+  document.getElementById('pdf-sprint-label').textContent = activeSprint || '';
+  const corteEl = document.getElementById('sib-corte');
+  document.getElementById('pdf-fecha').textContent =
+    'Corte: ' + (corteEl ? corteEl.textContent : '\u2014');
+  document.getElementById('pdf-generado').textContent =
+    'Generado: ' + new Date().toLocaleDateString('es-CO',
+      { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  window.print();
+}
+document.getElementById('btn-pdf').addEventListener('click', exportToPDF);
+
+document.getElementById('demo-btn').addEventListener('click', () => {
+  hideSetup();
+  showLoading(true);
+  setTimeout(() => {
+    loadDemo();
+    showLoading(false);
+    toast('\ud83d\udcca Mostrando datos de demostraci\u00f3n');
+  }, 300);
+});
+
+document.getElementById('filter-bar').addEventListener('click', e => {
+  const btn = e.target.closest('.filter-btn');
+  if (!btn) return;
+  activeFilter = btn.dataset.filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+  renderCards();
+});
+
+document.getElementById('search-input').addEventListener('input', e => {
+  searchQuery = e.target.value;
+  renderCards();
+});
+
+function showSetup() {
+  const url    = localStorage.getItem(LS_KEY);
+  const cfgUrl = localStorage.getItem(LS_CFG_URL);
+  if (url)    document.getElementById('sheets-url-input').value = url;
+  if (cfgUrl) document.getElementById('config-url-input').value = cfgUrl;
+  document.getElementById('setup-overlay').classList.remove('hidden');
+}
+function hideSetup() {
+  document.getElementById('setup-overlay').classList.add('hidden');
+}
+
+(function init() {
+  // Landing visible por defecto
+})();
+</script>
+</body>
+</html>
