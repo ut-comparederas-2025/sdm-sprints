@@ -795,13 +795,13 @@
 
     /* ─── PDF / PRINT ─── */
     @media print {
-      @page { size: A4 landscape; margin: 14mm 12mm; }
+      @page { size: A4 landscape; margin: 12mm 10mm; }
 
-      /* Ocultar todo excepto el contenido del sprint activo */
-      body { background: #fff !important; color: #000 !important; font-size: 10pt; }
+      /* Ocultar solo la UI de navegación */
+      body { background: #fff !important; color: #000 !important; font-size: 10pt;
+             -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       #landing-overlay, #setup-overlay, header, .filter-bar,
-      .view-actions, #loading, #toast, .sprint-nav,
-      .charts-section, #carry-over-section,
+      #loading, #toast, .sprint-nav,
       .btn-export, #btn-pdf, #btn-view-cards, #btn-view-list,
       #search-input { display: none !important; }
 
@@ -827,7 +827,7 @@
         display: grid !important;
         grid-template-columns: repeat(5, 1fr) !important;
         gap: 6px;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
       }
       .stat-card {
         border: 1px solid #ddd !important;
@@ -840,7 +840,67 @@
       .stat-label { font-size: 8pt !important; color: #555 !important; }
       .stat-sub   { font-size: 7.5pt !important; }
 
-      /* Tabla */
+      /* Gráficas — mostrar en grid de 2 columnas */
+      .charts-section {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+        margin-bottom: 12px;
+        page-break-inside: avoid;
+      }
+      .chart-card {
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+        padding: 10px !important;
+        break-inside: avoid;
+        background: #fff !important;
+      }
+      .chart-card.full-width {
+        grid-column: 1 / -1 !important;
+      }
+      .chart-title {
+        font-size: 8pt !important;
+        font-weight: 700 !important;
+        color: #1e3a5f !important;
+        margin-bottom: 6px !important;
+      }
+      .chart-wrap { height: 160px !important; }
+      .chart-wrap.bar { height: 140px !important; }
+      canvas {
+        max-width: 100% !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .donut-wrap { position: relative; }
+      .donut-center {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center; pointer-events: none;
+      }
+
+      /* Carry-over */
+      .carryover-section {
+        display: block !important;
+        margin-bottom: 12px;
+        break-inside: avoid;
+      }
+      .carryover-header {
+        background: #1e3a5f !important;
+        color: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        padding: 6px 12px;
+        border-radius: 6px 6px 0 0;
+        font-size: 9pt;
+      }
+      .carryover-table { width: 100%; font-size: 8pt; border-collapse: collapse; }
+      .carryover-table th {
+        background: #f1f5f9 !important; padding: 4px 8px;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      .carryover-table td { padding: 3px 8px; border-bottom: 1px solid #e5e7eb; }
+
+      /* Tabla de tareas */
       .task-table-wrap { overflow: visible !important; }
       .task-table {
         width: 100% !important;
@@ -864,20 +924,21 @@
         border-bottom: 1px solid #e5e7eb !important;
         vertical-align: middle;
       }
-      .task-table tr:nth-child(even) td { background: #f8fafc !important; }
-      .tbl-status-badge {
-        padding: 2px 6px !important;
-        border-radius: 4px !important;
-        font-size: 7.5pt !important;
+      .task-table tr:nth-child(even) td {
+        background: #f8fafc !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+      }
+      .tbl-status-badge {
+        padding: 2px 6px !important; border-radius: 4px !important;
+        font-size: 7.5pt !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
       }
       .tbl-proj-badge {
-        font-size: 7.5pt !important;
-        padding: 1px 5px !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+        font-size: 7.5pt !important; padding: 1px 5px !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
       }
+
       /* Encabezado del PDF */
       #pdf-header { display: block !important; }
     }
@@ -1028,6 +1089,15 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       Configurar
     </button>
+    <div style="width:1px;height:28px;background:rgba(255,255,255,.15)"></div>
+    <button class="btn-icon" id="btn-export" title="Exportar a Excel" style="background:rgba(21,128,61,.35);border:1px solid rgba(74,222,128,.3)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Excel
+    </button>
+    <button class="btn-icon" id="btn-pdf" title="Exportar a PDF" style="background:rgba(194,65,12,.45);border:1px solid rgba(251,146,60,.3)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h1a2 2 0 010 4H9v-4zm5 0h2m-2 2h2m-2 2h1"/></svg>
+      PDF
+    </button>
   </div>
 </header>
 
@@ -1170,7 +1240,7 @@
     <input type="text" class="search-input" id="search-input" placeholder="🔍 Buscar tarea o módulo…" />
   </div>
 
-  <!-- Fila 2: vista + exportar -->
+  <!-- Fila 2: vista -->
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
     <button class="btn-view" id="btn-view-cards" title="Vista tarjetas">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
@@ -1179,15 +1249,6 @@
     <button class="btn-view active" id="btn-view-list" title="Vista lista">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       Lista
-    </button>
-    <div style="flex:1"></div>
-    <button class="btn-export" id="btn-export" title="Exportar a Excel">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      Excel
-    </button>
-    <button class="btn-export" id="btn-pdf" title="Exportar a PDF" style="background:#c2410c">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h1a2 2 0 010 4H9v-4zm5 0h2m-2 2h2m-2 2h1"/></svg>
-      PDF
     </button>
   </div>
 
@@ -2403,13 +2464,11 @@ document.getElementById('btn-view-list').addEventListener('click', () => {
 document.getElementById('btn-export').addEventListener('click', exportToExcel);
 
 function exportToPDF() {
-  const tasks = getFilteredTasks();
-  if (!tasks.length) { toast('\u26a0\ufe0f No hay tareas para exportar'); return; }
   if (viewMode !== 'list') { viewMode = 'list'; renderCards(); }
   document.getElementById('pdf-sprint-label').textContent = activeSprint || '';
   const corteEl = document.getElementById('sib-corte');
   document.getElementById('pdf-fecha').textContent =
-    'Corte: ' + (corteEl ? corteEl.textContent : '\u2014');
+    'Corte: ' + (corteEl ? corteEl.textContent : '—');
   document.getElementById('pdf-generado').textContent =
     'Generado: ' + new Date().toLocaleDateString('es-CO',
       { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
@@ -2423,7 +2482,7 @@ document.getElementById('demo-btn').addEventListener('click', () => {
   setTimeout(() => {
     loadDemo();
     showLoading(false);
-    toast('\ud83d\udcca Mostrando datos de demostraci\u00f3n');
+    toast('📊 Mostrando datos de demostración');
   }, 300);
 });
 
