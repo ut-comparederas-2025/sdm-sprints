@@ -980,6 +980,9 @@
     <input type="url" id="config-url-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?gid=XXXX&output=csv" style="margin-bottom:6px"/>
     <div style="font-size:12px;color:#94a3b8;margin-bottom:14px">La pestaña 2 debe tener columnas: <strong>Sprint | Inicio | Fin</strong> (ej: Sprint 3 | 02/06/2025 | 27/06/2025)</div>
 
+    <div class="setup-input-label" style="margin-top:10px">URL hoja Ayuda (AYUDA_DASHBOARD) <span style="font-weight:400;color:#94a3b8">opcional</span></div>
+    <input type="url" id="help-url-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?gid=XXXX&output=csv" style="width:100%;border:2px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none;margin-bottom:14px"/>
+
     <div id="setup-error">No se pudo cargar el archivo. Verifica que el enlace sea correcto y esté publicado como CSV.</div>
 
     <div class="setup-btns">
@@ -1097,6 +1100,11 @@
     <button class="btn-icon" id="btn-pdf" title="Exportar a PDF" style="background:rgba(194,65,12,.45);border:1px solid rgba(251,146,60,.3)">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h1a2 2 0 010 4H9v-4zm5 0h2m-2 2h2m-2 2h1"/></svg>
       PDF
+    </button>
+    <div style="width:1px;height:28px;background:rgba(255,255,255,.15)"></div>
+    <button class="btn-icon" id="btn-help" title="¿Cómo usar el dashboard?" style="background:rgba(139,92,246,.25);border:1px solid rgba(167,139,250,.35)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      ¿Cómo usar?
     </button>
   </div>
 </header>
@@ -2231,6 +2239,7 @@ const LS_CORTE      = 'sdm_last_corte';
 const LS_SPRINT_NOW = 'sdm_current_sprint';
 const LS_CFG_URL    = 'sdm_config_url';
 const LS_CFG_DATA   = 'sdm_sprint_cfg';   // JSON: [{sprint, start, end}, ...]
+const LS_HELP_URL   = 'sdm_help_url';     // URL hoja AYUDA_DASHBOARD (CSV)
 
 // ─── Festivos colombianos (Ley 51/1983 – Ley Emiliani) ───────────────────────
 function getEaster(year) {
@@ -2435,10 +2444,12 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
 document.getElementById('config-btn').addEventListener('click', showSetup);
 
 document.getElementById('save-url-btn').addEventListener('click', async () => {
-  const url    = document.getElementById('sheets-url-input').value.trim();
-  const cfgUrl = document.getElementById('config-url-input').value.trim();
+  const url     = document.getElementById('sheets-url-input').value.trim();
+  const cfgUrl  = document.getElementById('config-url-input').value.trim();
+  const helpUrl = document.getElementById('help-url-input').value.trim();
   if (!url) return;
-  if (cfgUrl) localStorage.setItem(LS_CFG_URL, cfgUrl);
+  if (cfgUrl)  localStorage.setItem(LS_CFG_URL,  cfgUrl);
+  if (helpUrl) localStorage.setItem(LS_HELP_URL, helpUrl);
   document.getElementById('setup-error').style.display = 'none';
   try {
     await loadFromURL(url);
@@ -2502,17 +2513,269 @@ document.getElementById('search-input').addEventListener('input', e => {
 function showSetup() {
   const url    = localStorage.getItem(LS_KEY);
   const cfgUrl = localStorage.getItem(LS_CFG_URL);
-  if (url)    document.getElementById('sheets-url-input').value = url;
-  if (cfgUrl) document.getElementById('config-url-input').value = cfgUrl;
+  const helpUrl2 = localStorage.getItem(LS_HELP_URL);
+  if (url)      document.getElementById('sheets-url-input').value = url;
+  if (cfgUrl)   document.getElementById('config-url-input').value = cfgUrl;
+  if (helpUrl2) document.getElementById('help-url-input').value   = helpUrl2;
   document.getElementById('setup-overlay').classList.remove('hidden');
 }
 function hideSetup() {
   document.getElementById('setup-overlay').classList.add('hidden');
 }
 
+
+// ══════════════════════════════════════════════
+//  HELP PANEL
+// ══════════════════════════════════════════════
+
+// Inyectar estilos del drawer dinámicamente (sin tocar el <style> existente)
+(function injectHelpStyles() {
+  const s = document.createElement('style');
+  s.textContent = `
+    #help-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15,30,54,.5);
+      backdrop-filter: blur(2px);
+      z-index: 500;
+      opacity: 0; pointer-events: none;
+      transition: opacity .25s ease;
+    }
+    #help-overlay.open { opacity: 1; pointer-events: all; }
+    #help-drawer {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: min(500px, 96vw);
+      background: #f8fafc;
+      z-index: 501;
+      box-shadow: -6px 0 40px rgba(0,0,0,.18);
+      display: flex; flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+    }
+    #help-drawer.open { transform: translateX(0); }
+    .help-header {
+      background: #0f1e36; color: #fff;
+      padding: 16px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+      border-bottom: 2px solid #c8d400;
+    }
+    .help-header-title {
+      font-size: 15px; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .help-close-btn {
+      background: rgba(255,255,255,.1); border: none; color: #fff;
+      border-radius: 6px; width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 16px; transition: background .15s;
+    }
+    .help-close-btn:hover { background: rgba(255,255,255,.25); }
+    #help-body { flex: 1; overflow-y: auto; padding: 18px 16px 36px; }
+    .help-section { margin-bottom: 22px; }
+    .help-section-hdr {
+      font-size: 10.5px; font-weight: 800; color: #64748b;
+      text-transform: uppercase; letter-spacing: 1.3px;
+      margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .help-section-hdr::after { content:''; flex:1; height:1px; background:#e2e8f0; }
+    /* TITULO */
+    .hc-titulo {
+      background: linear-gradient(135deg,#0f1e36 0%,#1a4080 100%);
+      color: #fff; border-radius: 12px; padding: 20px 18px; margin-bottom: 8px;
+    }
+    .hc-titulo .hci { font-size: 30px; margin-bottom: 10px; display: block; }
+    .hc-titulo .hct { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+    .hc-titulo .hcs { font-size: 11px; color: #c8d400; font-weight: 700; margin-bottom: 10px; letter-spacing: .5px; text-transform: uppercase; }
+    .hc-titulo .hcc { font-size: 13px; color: rgba(255,255,255,.82); line-height: 1.65; }
+    /* BLOQUE */
+    .hc-bloque {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 14px 15px; margin-bottom: 8px;
+      display: flex; gap: 12px; align-items: flex-start;
+    }
+    .hc-bloque .hci { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .hc-bloque .hct { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 2px; }
+    .hc-bloque .hcs { font-size: 10.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
+    .hc-bloque .hcc { font-size: 13px; color: #475569; line-height: 1.6; }
+    /* ESTADO */
+    .hc-estado {
+      background: #fff; border: 1px solid #e2e8f0; border-left-width: 4px;
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+      display: flex; gap: 12px; align-items: flex-start;
+    }
+    .hc-estado .hci-wrap {
+      width: 34px; height: 34px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .hc-estado .hct { font-size: 13px; font-weight: 700; margin-bottom: 1px; }
+    .hc-estado .hcs { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .hc-estado .hcc { font-size: 12px; color: #64748b; line-height: 1.55; }
+    /* IMPORTANTE */
+    .hc-importante {
+      background: #fefce8; border: 1px solid #fde047;
+      border-radius: 10px; padding: 14px 15px; margin-bottom: 8px;
+      display: flex; gap: 12px; align-items: flex-start;
+    }
+    .hc-importante .hci { font-size: 20px; flex-shrink: 0; }
+    .hc-importante .hct { font-size: 13px; font-weight: 700; color: #854d0e; margin-bottom: 4px; }
+    .hc-importante .hcc { font-size: 13px; color: #713f12; line-height: 1.6; }
+    /* Loading */
+    .help-loading { text-align: center; padding: 48px 20px; color: #94a3b8; font-size: 14px; line-height: 1.8; }
+    .help-spinner {
+      width: 30px; height: 30px;
+      border: 3px solid #e2e8f0; border-top-color: #3b82f6;
+      border-radius: 50%; animation: hs-spin .75s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes hs-spin { to { transform: rotate(360deg); } }
+  `;
+  document.head.appendChild(s);
+})();
+
+const HELP_SECTION_LABELS = {
+  GENERAL:      'General',
+  INDICADORES:  'Indicadores',
+  GRAFICAS:     'Gráficas',
+  LISTA:        'Lista de tareas',
+  ESTADOS:      'Estados',
+  PENDIENTE:    'Estados · Pendiente',
+  EN_PROGRESO:  'Estados · En Progreso',
+  COMPLETADO:   'Estados · Completado',
+  BLOQUEOS:     'Bloqueos',
+  EVIDENCIAS:   'Evidencias',
+  VERSIONES:    'Versiones y Ambientes',
+  NOTA:         'Notas Importantes',
+};
+
+function openHelpPanel() {
+  document.getElementById('help-overlay').classList.add('open');
+  document.getElementById('help-drawer').classList.add('open');
+  loadHelpData();
+}
+
+function closeHelpPanel() {
+  document.getElementById('help-overlay').classList.remove('open');
+  document.getElementById('help-drawer').classList.remove('open');
+}
+
+async function loadHelpData() {
+  const body = document.getElementById('help-body');
+  body.innerHTML = '<div class="help-loading"><div class="help-spinner"></div><div>Cargando guía…</div></div>';
+
+  const helpUrl = localStorage.getItem(LS_HELP_URL);
+  if (!helpUrl) {
+    body.innerHTML = '<div class="help-loading">⚙️ URL de ayuda no configurada.<br><small>Agrégala en <strong>Configurar → URL hoja Ayuda</strong>.</small></div>';
+    return;
+  }
+  try {
+    const rows = await new Promise((resolve, reject) => {
+      Papa.parse(helpUrl, {
+        download: true, header: true, skipEmptyLines: true,
+        transformHeader: h => (h || '').replace(/^﻿/, '').trim().toUpperCase(),
+        complete: r => resolve(r.data),
+        error:    e => reject(e),
+      });
+    });
+    if (!rows || rows.length === 0) {
+      body.innerHTML = '<div class="help-loading">No existe información de ayuda configurada.</div>';
+      return;
+    }
+    renderHelpContent(rows);
+  } catch {
+    body.innerHTML = '<div class="help-loading">❌ No se pudo cargar la guía.<br><small>Verifica la URL de la hoja AYUDA_DASHBOARD.</small></div>';
+  }
+}
+
+function renderHelpContent(rows) {
+  rows.sort((a, b) => parseInt(a.ORDEN || 0) - parseInt(b.ORDEN || 0));
+  const sections = [];
+  const sectionMap = new Map();
+  rows.forEach(row => {
+    const sec = (row.SECCION || '').trim().toUpperCase() || 'GENERAL';
+    if (!sectionMap.has(sec)) { sectionMap.set(sec, []); sections.push(sec); }
+    sectionMap.get(sec).push(row);
+  });
+  const body = document.getElementById('help-body');
+  body.innerHTML = sections.map(sec => {
+    const label = HELP_SECTION_LABELS[sec] || sec;
+    const cards = sectionMap.get(sec).map(renderHelpCard).join('');
+    return `<div class="help-section"><div class="help-section-hdr">${escHtml(label)}</div>${cards}</div>`;
+  }).join('');
+}
+
+function renderHelpCard(row) {
+  const tipo  = (row.TIPO || 'BLOQUE').trim().toUpperCase();
+  const icon  = row.ICONO  || '';
+  const color = row.COLOR  || '#64748b';
+  const title = escHtml(row.TITULO   || '');
+  const sub   = escHtml(row.SUBTITULO || '');
+  const txt   = escHtml(row.CONTENIDO || '').replace(/\n/g, '<br>');
+
+  if (tipo === 'TITULO') return `
+    <div class="hc-titulo">
+      ${icon ? `<span class="hci">${icon}</span>` : ''}
+      <div class="hct">${title}</div>
+      ${sub ? `<div class="hcs">${sub}</div>` : ''}
+      ${txt ? `<div class="hcc">${txt}</div>` : ''}
+    </div>`;
+
+  if (tipo === 'ESTADO') return `
+    <div class="hc-estado" style="border-left-color:${color}">
+      <div class="hci-wrap" style="background:${color}22">${icon}</div>
+      <div>
+        <div class="hct" style="color:${color}">${title}</div>
+        ${sub ? `<div class="hcs">${sub}</div>` : ''}
+        ${txt ? `<div class="hcc">${txt}</div>` : ''}
+      </div>
+    </div>`;
+
+  if (tipo === 'IMPORTANTE') return `
+    <div class="hc-importante">
+      <div class="hci">⚠️</div>
+      <div>
+        ${title ? `<div class="hct">${title}</div>` : ''}
+        ${txt   ? `<div class="hcc">${txt}</div>`   : ''}
+      </div>
+    </div>`;
+
+  // Default: BLOQUE
+  return `
+    <div class="hc-bloque">
+      <div class="hci">${icon}</div>
+      <div>
+        <div class="hct">${title}</div>
+        ${sub ? `<div class="hcs">${sub}</div>` : ''}
+        ${txt ? `<div class="hcc">${txt}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+document.getElementById('btn-help').addEventListener('click', openHelpPanel);
+document.getElementById('help-overlay').addEventListener('click', closeHelpPanel);
+document.getElementById('help-close-btn').addEventListener('click', closeHelpPanel);
+
 (function init() {
   // Landing visible por defecto
 })();
 </script>
+
+<!-- ── HELP DRAWER ──────────────────────────────────────────────── -->
+<div id="help-overlay"></div>
+<div id="help-drawer">
+  <div class="help-header">
+    <div class="help-header-title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Guía de uso — SDM Sprints
+    </div>
+    <button class="help-close-btn" id="help-close-btn" aria-label="Cerrar">&#x2715;</button>
+  </div>
+  <div id="help-body">
+    <div class="help-loading"><div class="help-spinner"></div><div>Cargando guía…</div></div>
+  </div>
+</div>
+
 </body>
 </html>
