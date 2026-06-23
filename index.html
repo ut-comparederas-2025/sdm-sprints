@@ -1340,7 +1340,11 @@ function parseSprintName(s) {
   return name || null;
 }
 
-// Normaliza nombre de sprint: "2" → "Sprint 2", rechaza IDs tipo 784, 788
+function sprintNumber(name) {
+  const m = name && name.match(/(\d+)/);
+  return m ? parseInt(m[1]) : 999;
+}
+
 function normalizeSprintName(s) {
   if (!s) return '';
   s = s.trim();
@@ -1355,11 +1359,6 @@ function normalizeSprintName(s) {
     return 'Sprint ' + n;
   }
   return s;
-}
-
-function sprintNumber(name) {
-  const m = name && name.match(/(\d+)/);
-  return m ? parseInt(m[1]) : 999;
 }
 
 function parseProjects(s) {
@@ -2102,7 +2101,7 @@ function toast(msg, ms = 3000) {
   setTimeout(() => t.classList.remove('show'), ms);
 }
 
-// Wrapper: descarga un CSV remoto usando PapaParse (download:true maneja redirects de Google Sheets)
+// Wrapper: descarga un CSV remoto usando PapaParse
 function fetchCSV(url) {
   return new Promise(function(resolve, reject) {
     Papa.parse(url, {
@@ -2111,7 +2110,6 @@ function fetchCSV(url) {
       complete: function(results) {
         var rows = results.data;
         if (!rows || rows.length === 0) return reject(new Error('CSV vacío'));
-        // Papa.unparse re-construye el CSV respetando comillas en celdas con comas
         resolve(Papa.unparse(rows));
       },
       error: function(err) { reject(err); }
@@ -2201,8 +2199,8 @@ async function loadSprintConfig(cfgUrl){
 }
 
 async function loadData(url){
-  const onDashboard = document.getElementById('landing-overlay').classList.contains('hidden');
-  if(onDashboard) showLoading(true);
+  const onDashboard=document.getElementById('landing-overlay').classList.contains('hidden');
+  if(onDashboard)showLoading(true);
   try{
     await loadSprintConfig(localStorage.getItem(LS_CFG_URL)||DEFAULT_CONFIG_URL);
     processCSV(await fetchCSV(url));
@@ -2211,7 +2209,7 @@ async function loadData(url){
     if(errEl)errEl.style.display='block';
     toast('❌ Error al cargar datos: '+(e.message||e),5000);
   }finally{
-    if(onDashboard) showLoading(false);
+    if(onDashboard)showLoading(false);
   }
 }
 
