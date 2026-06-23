@@ -949,7 +949,7 @@
 <body>
 
 <!-- Loading -->
-<div id="loading">
+<div id="loading" class="hidden">
   <div class="spinner"></div>
   <div class="loading-text">Cargando datos…</div>
 </div>
@@ -1338,6 +1338,23 @@ function parseSprintName(s) {
   const m = s.match(/^(.+?)\s*\(/);
   const name = (m ? m[1] : s).trim();
   return name || null;
+}
+
+// Normaliza nombre de sprint: "2" → "Sprint 2", rechaza IDs tipo 784, 788
+function normalizeSprintName(s) {
+  if (!s) return '';
+  s = s.trim();
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    if (n < 1 || n > 99) return '';
+    return 'Sprint ' + n;
+  }
+  if (/^sprint\s+\d+$/i.test(s)) {
+    const n = parseInt(s.match(/\d+/)[0], 10);
+    if (n < 1 || n > 99) return '';
+    return 'Sprint ' + n;
+  }
+  return s;
 }
 
 function sprintNumber(name) {
@@ -2085,569 +2102,318 @@ function toast(msg, ms = 3000) {
   setTimeout(() => t.classList.remove('show'), ms);
 }
 
-// Wrapper: descarga un CSV remoto usando PapaParse (maneja CORS y redirects de Google Sheets)
-function downloadCSV(url) {
-  return new Promise((resolve, reject) => {
+// Wrapper: descarga un CSV remoto usando PapaParse (download:true maneja redirects de Google Sheets)
+function fetchCSV(url) {
+  return new Promise(function(resolve, reject) {
     Papa.parse(url, {
       download: true,
       skipEmptyLines: true,
-      complete: results => resolve(results.data.map(r => r.join(',')).join('\n')),
-      error: err => reject(err),
+      complete: function(results) {
+        var rows = results.data;
+        if (!rows || rows.length === 0) return reject(new Error('CSV vacío'));
+        // Papa.unparse re-construye el CSV respetando comillas en celdas con comas
+        resolve(Papa.unparse(rows));
+      },
+      error: function(err) { reject(err); }
     });
   });
 }
 
-async function loadFromURL(url) {
-  showLoading(true);
-  try {
-    let text;
-    try {
-      // Intento 1: PapaParse download (mejor para Google Sheets – maneja redirects)
-      text = await downloadCSV(url);
-    } catch {
-      // Intento 2: fetch directo como fallback
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      text = await resp.text();
-    }
-
-    processCSV(text);
-    localStorage.setItem(LS_KEY, url);
-
-    // Cargar pestaña de config (Hoja 2) si hay URL guardada
-    const cfgUrl = localStorage.getItem(LS_CFG_URL);
-    if (cfgUrl) {
-      try {
-        let cfgText;
-        try {
-          cfgText = await downloadCSV(cfgUrl);
-        } catch {
-          const r = await fetch(cfgUrl);
-          if (r.ok) cfgText = await r.text();
-        }
-        if (cfgText) {
-          const cfg = processConfigCSV(cfgText);
-          localStorage.setItem(LS_CFG_DATA, JSON.stringify(cfg));
-          updateLandingInfo();
-        }
-      } catch { /* config sheet es opcional */ }
-    }
-
-    toast('✅ Datos cargados correctamente');
-  } catch(e) {
-    console.error(e);
-    throw e;
-  } finally {
-    showLoading(false);
-  }
-}
-
-// ══════════════════════════════════════════════
-//  DEMO DATA
-//  Simula el modelo real: reporte anterior + reporte actual (acumulado).
-//  5 tareas que iniciaron en Sprint 2 pasan al Sprint 3 → aparecen en ambas pestañas.
-//  Sprint 2 total: 17 tareas  |  Sprint 3 total: 16 nuevas + 5 carry-over = 21
-// ══════════════════════════════════════════════
-function loadDemo() {
-  const fmt = (d) => {
-    const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-    return `${d.getDate()} de ${months[d.getMonth()]} de ${d.getFullYear()}`;
-  };
-  const fut  = (days) => { const d = new Date(); d.setDate(d.getDate()+days); return fmt(d); };
-  const past = (days) => { const d = new Date(); d.setDate(d.getDate()-days); return fmt(d); };
-
-  const hoy  = fmt(new Date());
-  const ant  = past(14);  // reporte anterior (14 días)
-  const H = ['Fecha Reporte','Sprint SDM','Descripción','Propiedad','Assignee','Complejidad','Completion','Creado por','Created by','DEV','Due','En producción?','Entorno','Fecha','Fecha de creación','Last edited time','Negocio','Pais','Pantalla','Pantallazo','Parent task','Priority','Proyecto','Pull Request','Repositorio','Responsable (PO)','SA','Sprint','Stakeholder','Status','Sub-task','Summary','Tipo_desarrollo','Version APK','Waiting for'];
-  const r = (fr,sp,desc,id,pri,proy,status,due) =>
-    [fr,sp,desc,id,'','','','','','',due,'','','',past(60),past(30),'','','','','',pri,proy+'(https://example.com)','','','','',sp+' (https://example.com)','',status,'','','','',''];
-
-  // ── REPORTE 1 (hace 14 días) — Sprint 2 completo, Sprint 3 recién abriendo ──
-  // 17 tareas en Sprint 2 · 5 de ellas aún "En desarrollo"
-  const rep1 = [
-    r(ant,'Sprint 2','Implementar captura de evidencias','1001','1. Very high','Core Build & Engine','En desarrollo',past(5)),
-    r(ant,'Sprint 2','Validar campos obligatorios','1002','2. High','Aplicación Mobile','En desarrollo',past(3)),
-    r(ant,'Sprint 2','Diseñar flujo de evidencias','1003','2. High','Visual & Experience','En desarrollo',past(4)),
-    r(ant,'Sprint 2','Configurar entorno de staging','1004','1. Very high','INFRAESTRUCTURA MDM SOTI','En desarrollo',past(6)),
-    r(ant,'Sprint 2','Pruebas unitarias módulo A','1005','3. Medium High','Quality Assurance (QA) & Beta','En desarrollo',past(2)),
-    // Tareas terminadas en Sprint 2
-    r(ant,'Sprint 2','Diseño de base de datos','1006','1. Very high','Core Build & Engine','Finalizado',past(20)),
-    r(ant,'Sprint 2','Autenticación de usuarios','1007','1. Very high','Aplicación Mobile','Finalizado',past(18)),
-    r(ant,'Sprint 2','Pantalla de inicio','1008','2. High','Visual & Experience','Finalizado',past(17)),
-    r(ant,'Sprint 2','Módulo de permisos','1009','1. Very high','Core Build & Engine','Finalizado',past(16)),
-    r(ant,'Sprint 2','API REST base','1010','2. High','Core Build & Engine','Finalizado',past(15)),
-    r(ant,'Sprint 2','Prototipo navegable','1011','3. Medium High','Visual & Experience','Finalizado',past(14)),
-    r(ant,'Sprint 2','Configurar CI/CD base','1012','2. High','INFRAESTRUCTURA MDM SOTI','Finalizado',past(14)),
-    r(ant,'Sprint 2','Integración SSO','1013','1. Very high','Aplicación Mobile','Finalizado',past(13)),
-    r(ant,'Sprint 2','Test de carga inicial','1014','2. High','Quality Assurance (QA) & Beta','Finalizado',past(12)),
-    r(ant,'Sprint 2','Documentación API v1','1015','3. Medium High','Documentación','Finalizado',past(11)),
-    r(ant,'Sprint 2','Gestión de sesiones','1016','2. High','Aplicación Mobile','Finalizado',past(10)),
-    r(ant,'Sprint 2','Esquema de notificaciones','1017','4. Medium Low','Aplicación Mobile','Definición',past(3)),
-  ];
-
-  // ── REPORTE 2 (hoy) — Sprint 2 cerrado + Sprint 3 activo ──
-  // Las 5 tareas "En desarrollo" del Sprint 2 pasaron al Sprint 3 (carry-over)
-  // Sprint 3 tiene 16 tareas nuevas + 5 carry-over = 21
-  const rep2 = [
-    // Sprint 2 — versión final (12 tareas cerradas, las 5 carry-over ya no se reportan aquí)
-    r(hoy,'Sprint 2','Diseño de base de datos','1006','1. Very high','Core Build & Engine','Finalizado',past(20)),
-    r(hoy,'Sprint 2','Autenticación de usuarios','1007','1. Very high','Aplicación Mobile','Finalizado',past(18)),
-    r(hoy,'Sprint 2','Pantalla de inicio','1008','2. High','Visual & Experience','Finalizado',past(17)),
-    r(hoy,'Sprint 2','Módulo de permisos','1009','1. Very high','Core Build & Engine','Finalizado',past(16)),
-    r(hoy,'Sprint 2','API REST base','1010','2. High','Core Build & Engine','Finalizado',past(15)),
-    r(hoy,'Sprint 2','Prototipo navegable','1011','3. Medium High','Visual & Experience','Finalizado',past(14)),
-    r(hoy,'Sprint 2','Configurar CI/CD base','1012','2. High','INFRAESTRUCTURA MDM SOTI','Finalizado',past(14)),
-    r(hoy,'Sprint 2','Integración SSO','1013','1. Very high','Aplicación Mobile','Finalizado',past(13)),
-    r(hoy,'Sprint 2','Test de carga inicial','1014','2. High','Quality Assurance (QA) & Beta','Finalizado',past(12)),
-    r(hoy,'Sprint 2','Documentación API v1','1015','3. Medium High','Documentación','Finalizado',past(11)),
-    r(hoy,'Sprint 2','Gestión de sesiones','1016','2. High','Aplicación Mobile','Finalizado',past(10)),
-    r(hoy,'Sprint 2','Esquema de notificaciones','1017','4. Medium Low','Aplicación Mobile','Finalizado',past(3)),
-    // Sprint 3 — 5 carry-over de Sprint 2 (misma Propiedad, ahora Sprint SDM = Sprint 3)
-    r(hoy,'Sprint 3','Implementar captura de evidencias','1001','1. Very high','Core Build & Engine','En desarrollo',fut(5)),
-    r(hoy,'Sprint 3','Validar campos obligatorios','1002','2. High','Aplicación Mobile','Bloqueado',fut(3)),
-    r(hoy,'Sprint 3','Diseñar flujo de evidencias','1003','2. High','Visual & Experience','Terminado en Desarrollo',fut(4)),
-    r(hoy,'Sprint 3','Configurar entorno de staging','1004','1. Very high','INFRAESTRUCTURA MDM SOTI','En Pruebas SDM',fut(6)),
-    r(hoy,'Sprint 3','Pruebas unitarias módulo A','1005','3. Medium High','Quality Assurance (QA) & Beta','Terminado en QA',fut(2)),
-    // Sprint 3 — 16 tareas nuevas
-    r(hoy,'Sprint 3','Implementar módulo de reportes','2001','1. Very high','Módulo reportes','No iniciado',fut(10)),
-    r(hoy,'Sprint 3','Diseñar flujo de notificaciones','2002','2. High','Aplicación Mobile','Definición',fut(14)),
-    r(hoy,'Sprint 3','Validar integración comparendos','2003','1. Very high','Core Build & Engine','En desarrollo',fut(7)),
-    r(hoy,'Sprint 3','Crear API de ubicabilidad','2004','2. High','Módulo Ubicabilidad','En desarrollo',fut(5)),
-    r(hoy,'Sprint 3','Documentar arquitectura','2005','3. Medium High','Documentación','No iniciado',fut(20)),
-    r(hoy,'Sprint 3','Control de acceso por roles','2006','1. Very high','Módulo usuarios','Definición',fut(12)),
-    r(hoy,'Sprint 3','Pruebas de rendimiento','2007','1. Very high','Quality Assurance (QA) & Beta','Terminado en QA',past(2)),
-    r(hoy,'Sprint 3','Pipeline CI/CD avanzado','2008','2. High','INFRAESTRUCTURA MDM SOTI','Aprobado por SDM',fut(3)),
-    r(hoy,'Sprint 3','Documentación usuario final','2009','4. Medium Low','Documentación','No iniciado',fut(18)),
-    r(hoy,'Sprint 3','Sincronización offline','2010','1. Very high','Core Build & Engine','En desarrollo',fut(9)),
-    r(hoy,'Sprint 3','Pantalla de gestión de casos','2011','2. High','Módulo gestión de casos','Finalizado',fut(6)),
-    r(hoy,'Sprint 3','Integración con comparenderas','2012','1. Very high','Core Build & Engine','En desarrollo',fut(8)),
-    r(hoy,'Sprint 3','Dashboard de métricas','2013','2. High','Visual & Experience','No iniciado',fut(15)),
-    r(hoy,'Sprint 3','Migración de datos históricos','2014','1. Very high','Core Build & Engine','Definición',fut(11)),
-    r(hoy,'Sprint 3','Módulo de alertas','2015','2. High','Aplicación Mobile','No iniciado',fut(13)),
-    r(hoy,'Sprint 3','Optimización de consultas DB','2016','3. Medium High','Core Build & Engine','En desarrollo',fut(7)),
-  ];
-
-  // Acumulado (igual que el sheet real): reporte 1 + reporte 2
-  const demoCSV = [H, ...rep1, ...rep2].map(row => row.join(',')).join('\n');
-  processCSV(demoCSV);
-}
-
-// ══════════════════════════════════════════════
-//  LANDING PAGE
-// ══════════════════════════════════════════════
 const LS_CORTE      = 'sdm_last_corte';
 const LS_SPRINT_NOW = 'sdm_current_sprint';
 const LS_CFG_URL    = 'sdm_config_url';
-const LS_CFG_DATA   = 'sdm_sprint_cfg';   // JSON: [{sprint, start, end}, ...]
-const LS_HELP_URL   = 'sdm_help_url';     // URL hoja AYUDA_DASHBOARD (CSV)
+const LS_CFG_DATA   = 'sdm_sprint_cfg';
+const LS_HELP_URL   = 'sdm_help_url';
 
-// ─── Festivos colombianos (Ley 51/1983 – Ley Emiliani) ───────────────────────
-function getEaster(year) {
-  // Anonymous Gregorian algorithm
-  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
-  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31); // 1-based
-  const day   = ((h + l - 7 * m + 114) % 31) + 1;
-  return new Date(year, month - 1, day);
+function parseConfigDate(s) {
+  if (!s) return null;
+  const parts = String(s).trim().split('/');
+  if (parts.length < 3) return null;
+  const d = Number(parts[0]), m = Number(parts[1]), y = Number(parts[2]);
+  return (d && m && y) ? new Date(y, m - 1, d) : null;
 }
 
-function nextMonday(date) {
-  // If already Monday return same day; else advance to next Monday
-  const d = new Date(date);
-  const dow = d.getDay(); // 0=Sun,1=Mon,...
-  if (dow === 1) return d;
-  const diff = dow === 0 ? 1 : (8 - dow);
-  d.setDate(d.getDate() + diff);
+function getEasterDate(year) {
+  const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4;
+  const f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3);
+  const h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4;
+  const l=(32+2*e+2*i-h-k)%7,mm=Math.floor((a+11*h+22*l)/451);
+  const month=Math.floor((h+l-7*mm+114)/31)-1;
+  const day=((h+l-7*mm+114)%31)+1;
+  return new Date(year,month,day);
+}
+
+function addDays(date,n){const d=new Date(date);d.setDate(d.getDate()+n);return d;}
+
+function toNextMonday(date){
+  const d=new Date(date),dow=d.getDay();
+  if(dow===1)return d;
+  d.setDate(d.getDate()+(dow===0?1:8-dow));
   return d;
 }
 
-function getColombianHolidays(year) {
-  const fixed = [
-    new Date(year, 0,  1),  // 1 ene  Año Nuevo
-    new Date(year, 4,  1),  // 1 may  Día del Trabajo
-    new Date(year, 6,  20), // 20 jul  Independencia
-    new Date(year, 7,  7),  // 7 ago  Batalla de Boyacá
-    new Date(year, 11, 8),  // 8 dic  Inmaculada Concepción
-    new Date(year, 11, 25), // 25 dic  Navidad
-  ];
-  // Ley Emiliani – se mueven al siguiente lunes
-  const emiliani = [
-    new Date(year, 0,  6),  // 6 ene  Reyes Magos
-    new Date(year, 2,  19), // 19 mar  San José
-    new Date(year, 5,  29), // 29 jun  San Pedro y San Pablo
-    new Date(year, 7,  15), // 15 ago  Asunción de la Virgen
-    new Date(year, 9,  12), // 12 oct  Día de la Raza
-    new Date(year, 10, 1),  // 1 nov  Todos los Santos
-    new Date(year, 10, 11), // 11 nov  Independencia de Cartagena
-  ].map(nextMonday);
-
-  const easter = getEaster(year);
-  const easterOffset = (n) => { const d = new Date(easter); d.setDate(d.getDate() + n); return d; };
-  // Pascua-based: Jueves Santo, Viernes Santo → fijos (no Emiliani)
-  // Ascensión, Corpus Christi, Sagrado Corazón → Emiliani
-  const pascua = [
-    easterOffset(-3),              // Jueves Santo
-    easterOffset(-2),              // Viernes Santo
-    nextMonday(easterOffset(39)),  // Ascensión
-    nextMonday(easterOffset(60)),  // Corpus Christi
-    nextMonday(easterOffset(68)),  // Sagrado Corazón
-  ];
-
-  const all = [...fixed, ...emiliani, ...pascua];
-  // Return as Set of "YYYY-MM-DD" strings for fast lookup
-  return new Set(all.map(d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`));
+function getColombianHolidays(year){
+  const easter=getEasterDate(year),set=new Set();
+  const key=d=>d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();
+  [new Date(year,0,1),new Date(year,4,1),new Date(year,6,20),new Date(year,7,7),
+   new Date(year,11,8),new Date(year,11,25),addDays(easter,-3),addDays(easter,-2)]
+  .forEach(d=>set.add(key(d)));
+  [new Date(year,0,6),new Date(year,2,19),new Date(year,5,29),new Date(year,7,15),
+   new Date(year,9,12),new Date(year,10,1),new Date(year,10,11),
+   addDays(easter,39),addDays(easter,60),addDays(easter,68)]
+  .map(toNextMonday).forEach(d=>set.add(key(d)));
+  return set;
 }
 
-const _holidayCache = {};
-function isColombianHoliday(date) {
-  const y = date.getFullYear();
-  if (!_holidayCache[y]) _holidayCache[y] = getColombianHolidays(y);
-  const key = `${y}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-  return _holidayCache[y].has(key);
+function isWorkingDay(date){
+  const dow=date.getDay();
+  if(dow===0||dow===6)return false;
+  const h=getColombianHolidays(date.getFullYear());
+  return !h.has(date.getFullYear()+'-'+date.getMonth()+'-'+date.getDate());
 }
 
-function countWorkingDays(d1, d2) {
-  const start = new Date(d1); start.setHours(0,0,0,0);
-  const end   = new Date(d2); end.setHours(0,0,0,0);
-  if (start > end) return 0;
-  let count = 0;
-  const cur = new Date(start);
-  while (cur <= end) {
-    const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6 && !isColombianHoliday(cur)) count++;
-    cur.setDate(cur.getDate() + 1);
+function countWorkingDays(start,end){
+  if(!start||!end||start>end)return 0;
+  let count=0;
+  const cur=new Date(start);cur.setHours(0,0,0,0);
+  const fin=new Date(end);fin.setHours(0,0,0,0);
+  const hCache={};
+  while(cur<=fin){
+    const y=cur.getFullYear();
+    if(!hCache[y])hCache[y]=getColombianHolidays(y);
+    const dow=cur.getDay();
+    const key=y+'-'+cur.getMonth()+'-'+cur.getDate();
+    if(dow!==0&&dow!==6&&!hCache[y].has(key))count++;
+    cur.setDate(cur.getDate()+1);
   }
   return count;
 }
 
-// Parse date: dd/mm/yyyy or yyyy-mm-dd
-function parseConfigDate(s) {
-  if (!s) return null;
-  s = s.trim();
-  let m;
-  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
-  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (m) return new Date(+m[3], +m[2]-1, +m[1]);
-  return null;
+async function loadSprintConfig(cfgUrl){
+  try{
+    const rows=await new Promise(function(resolve,reject){
+      Papa.parse(cfgUrl,{download:true,header:true,skipEmptyLines:true,
+        transformHeader:function(h){return(h||'').replace(/^﻿/,'').trim().toLowerCase();},
+        complete:function(r){resolve(r.data);},error:function(e){reject(e);}});
+    });
+    if(rows&&rows.length)localStorage.setItem(LS_CFG_DATA,JSON.stringify(rows));
+  }catch(e){}
 }
 
-function updateLandingInfo() {
-  const corte      = localStorage.getItem(LS_CORTE);
-  const sprintNow  = localStorage.getItem(LS_SPRINT_NOW);
-  const cfgRaw     = localStorage.getItem(LS_CFG_DATA);
-  const cfg        = cfgRaw ? JSON.parse(cfgRaw) : [];
-
-  document.getElementById('land-corte').textContent  = corte     || '\u2014';
-  document.getElementById('land-sprint').textContent = sprintNow || '\u2014';
-
-  const entry = cfg.find(r => r.sprint === sprintNow) || cfg[0] || null;
-
-  if (entry && entry.start && entry.end) {
-    const startD = parseConfigDate(entry.start);
-    const endD   = parseConfigDate(entry.end);
-    const fmtShort = d => d
-      ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'short' })
-      : '\u2014';
-
-    document.getElementById('land-period-ini').textContent = fmtShort(startD);
-    document.getElementById('land-period-fin').textContent = '\u2193 ' + fmtShort(endD);
-
-    if (startD && endD) {
-      const today  = new Date(); today.setHours(0,0,0,0);
-      const capEnd = today > endD ? endD : today;
-      const elapsed = countWorkingDays(startD, capEnd);
-      let remaining = 0;
-      if (today < endD) {
-        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-        remaining = countWorkingDays(tomorrow, endD);
-      }
-      document.getElementById('land-elapsed').textContent   = elapsed;
-      document.getElementById('land-remaining').textContent = remaining;
-    }
-  } else {
-    document.getElementById('land-period-ini').textContent = '\u2014';
-    document.getElementById('land-period-fin').textContent = 'sin configurar';
-    document.getElementById('land-elapsed').textContent    = '\u2014';
-    document.getElementById('land-remaining').textContent  = '\u2014';
+async function loadData(url){
+  const onDashboard = document.getElementById('landing-overlay').classList.contains('hidden');
+  if(onDashboard) showLoading(true);
+  try{
+    await loadSprintConfig(localStorage.getItem(LS_CFG_URL)||DEFAULT_CONFIG_URL);
+    processCSV(await fetchCSV(url));
+  }catch(e){
+    const errEl=document.getElementById('setup-error');
+    if(errEl)errEl.style.display='block';
+    toast('❌ Error al cargar datos: '+(e.message||e),5000);
+  }finally{
+    if(onDashboard) showLoading(false);
   }
 }
 
-// Normaliza nombre de sprint: "2" → "Sprint 2", rechaza IDs tipo 784, 788
-function normalizeSprintName(s) {
-  if (!s) return '';
-  s = s.trim();
-  if (/^\d+$/.test(s)) {
-    const n = parseInt(s, 10);
-    if (n < 1 || n > 99) return '';
-    return 'Sprint ' + n;
+function updateLanding(){
+  const corte=localStorage.getItem(LS_CORTE);
+  const sprint=localStorage.getItem(LS_SPRINT_NOW);
+  const lc=document.getElementById('land-corte');
+  const ls=document.getElementById('land-sprint');
+  if(lc&&corte)lc.textContent=corte;
+  if(ls&&sprint)ls.textContent=sprint;
+  const cfgRaw=localStorage.getItem(LS_CFG_DATA);
+  if(!cfgRaw||!sprint)return;
+  let cfg;try{cfg=JSON.parse(cfgRaw);}catch(e){return;}
+  const entry=cfg.find(function(c){return c.sprint===sprint;});
+  if(!entry||!entry.start)return;
+  const startDate=parseConfigDate(entry.start);
+  const endDate=parseConfigDate(entry.end);
+  if(!startDate)return;
+  const fmt=function(d){return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});};
+  const iniEl=document.getElementById('land-period-ini');
+  const finEl=document.getElementById('land-period-fin');
+  if(iniEl)iniEl.textContent=fmt(startDate);
+  if(finEl&&endDate)finEl.textContent='— '+fmt(endDate);
+  if(!endDate)return;
+  const today=new Date();today.setHours(0,0,0,0);
+  const effectiveEnd=today>endDate?endDate:today;
+  const elapsed=startDate<=effectiveEnd?countWorkingDays(startDate,effectiveEnd):0;
+  const total=countWorkingDays(startDate,endDate);
+  const elEl=document.getElementById('land-elapsed');
+  const remEl=document.getElementById('land-remaining');
+  if(elEl)elEl.textContent=elapsed+' de '+total;
+  if(remEl){
+    if(today>=endDate){remEl.textContent='0 — Finalizado';}
+    else{const tom=new Date(today);tom.setDate(tom.getDate()+1);remEl.textContent=countWorkingDays(tom,endDate)+'';}
   }
-  if (/^sprint\s+\d+$/i.test(s)) {
-    const n = parseInt(s.match(/\d+/)[0], 10);
-    if (n < 1 || n > 99) return '';
-    return 'Sprint ' + n;
-  }
-  return s;
 }
 
-// Parsea CSV de config (Hoja 2): Sprint | Inicio | Fin
-function processConfigCSV(csvText) {
-  const result = Papa.parse(csvText, { header: false, skipEmptyLines: true });
-  const rows   = result.data;
-  if (!rows || rows.length < 2) return [];
-  const headers = rows[0].map(h => h.trim().toLowerCase());
-  const iSprint = headers.findIndex(h => h.includes('sprint'));
-  const iStart  = headers.findIndex(h =>
-    h.includes('inicio') || h.includes('ini') || h.includes('start') || h === 'fecha inicio');
-  const iEnd    = headers.findIndex(h =>
-    h.includes('fin') || h.includes('end') || h === 'fecha fin');
-  if (iSprint < 0) return [];
-  return rows.slice(1).map(r => ({
-    sprint: normalizeSprintName((r[iSprint]||'').trim()),
-    start:  iStart >= 0 ? (r[iStart]||'').trim() : '',
-    end:    iEnd   >= 0 ? (r[iEnd]  ||'').trim() : '',
-  })).filter(r => r.sprint);
+function showSetup(){
+  const overlay=document.getElementById('setup-overlay');
+  if(!overlay)return;
+  const di=document.getElementById('sheets-url-input');
+  const ci=document.getElementById('config-url-input');
+  const hi=document.getElementById('help-url-input');
+  if(di)di.value=localStorage.getItem(LS_KEY)||DEFAULT_DATA_URL;
+  if(ci)ci.value=localStorage.getItem(LS_CFG_URL)||DEFAULT_CONFIG_URL;
+  if(hi)hi.value=localStorage.getItem(LS_HELP_URL)||'';
+  overlay.classList.remove('hidden');
 }
 
-// ── Botón Ingresar en landing ────────────────────────────────────────────────
-document.getElementById('btn-enter').addEventListener('click', () => {
+function exportToPDF(){window.print();}
+
+function updateTimestamp(){
+  const el=document.getElementById('update-time');
+  const rd=document.getElementById('report-date');
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})+' p. m.';
+  if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
+}
+
+document.getElementById('btn-enter').addEventListener('click',function(){
   document.getElementById('landing-overlay').classList.add('hidden');
-  // Datos ya precargados en segundo plano
 });
-
-// Actualizar info de la landing con datos guardados
-updateLandingInfo();
-
-// Precargar datos en segundo plano mientras el usuario ve la landing
-(async () => {
-  if (!localStorage.getItem(LS_CFG_URL)) localStorage.setItem(LS_CFG_URL, DEFAULT_CONFIG_URL);
-  const url = localStorage.getItem(LS_KEY) || DEFAULT_DATA_URL;
-  try { await loadFromURL(url); } catch { /* silencioso */ }
-})();
-
-// ══════════════════════════════════════════════
-//  EVENTS
-// ══════════════════════════════════════════════
-document.getElementById('refresh-btn').addEventListener('click', async () => {
-  const url = localStorage.getItem(LS_KEY);
-  if (!url) { showSetup(); return; }
-  try {
-    await loadFromURL(url);
-  } catch {
-    toast('\u274c Error al actualizar. Verifica la URL.');
-  }
+document.getElementById('refresh-btn').addEventListener('click',async function(){
+  await loadData(localStorage.getItem(LS_KEY)||DEFAULT_DATA_URL);
+  toast('✅ Datos actualizados');
 });
-
-document.getElementById('config-btn').addEventListener('click', showSetup);
-
-document.getElementById('save-url-btn').addEventListener('click', async () => {
-  const url     = document.getElementById('sheets-url-input').value.trim();
-  const cfgUrl  = document.getElementById('config-url-input').value.trim();
-  const helpUrl = document.getElementById('help-url-input').value.trim();
-  if (!url) return;
-  if (cfgUrl)  localStorage.setItem(LS_CFG_URL,  cfgUrl);
-  if (helpUrl) localStorage.setItem(LS_HELP_URL, helpUrl);
-  document.getElementById('setup-error').style.display = 'none';
-  try {
-    await loadFromURL(url);
-    hideSetup();
-  } catch {
-    document.getElementById('setup-error').style.display = 'block';
-  }
+document.getElementById('config-btn').addEventListener('click',showSetup);
+document.getElementById('save-url-btn').addEventListener('click',async function(){
+  const url=(document.getElementById('sheets-url-input')||{}).value||'';
+  const cfgUrl=(document.getElementById('config-url-input')||{}).value||'';
+  const helpUrl=(document.getElementById('help-url-input')||{}).value||'';
+  if(!url.trim()){toast('Ingresa una URL válida');return;}
+  localStorage.setItem(LS_KEY,url.trim());
+  if(cfgUrl.trim())localStorage.setItem(LS_CFG_URL,cfgUrl.trim());
+  if(helpUrl.trim())localStorage.setItem(LS_HELP_URL,helpUrl.trim());
+  document.getElementById('setup-overlay').classList.add('hidden');
+  await loadData(url.trim());
+  document.getElementById('landing-overlay').classList.add('hidden');
 });
-
-document.getElementById('btn-view-cards').addEventListener('click', () => {
-  viewMode = 'cards';
+document.getElementById('btn-view-cards').addEventListener('click',function(){
+  viewMode='cards';
   document.getElementById('btn-view-cards').classList.add('active');
   document.getElementById('btn-view-list').classList.remove('active');
   renderCards();
 });
-document.getElementById('btn-view-list').addEventListener('click', () => {
-  viewMode = 'list';
+document.getElementById('btn-view-list').addEventListener('click',function(){
+  viewMode='list';
   document.getElementById('btn-view-list').classList.add('active');
   document.getElementById('btn-view-cards').classList.remove('active');
   renderCards();
 });
-
-document.getElementById('btn-export').addEventListener('click', exportToExcel);
-
-function exportToPDF() {
-  if (viewMode !== 'list') { viewMode = 'list'; renderCards(); }
-  document.getElementById('pdf-sprint-label').textContent = activeSprint || '';
-  const corteEl = document.getElementById('sib-corte');
-  document.getElementById('pdf-fecha').textContent =
-    'Corte: ' + (corteEl ? corteEl.textContent : '—');
-  document.getElementById('pdf-generado').textContent =
-    'Generado: ' + new Date().toLocaleDateString('es-CO',
-      { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-  window.print();
-}
-document.getElementById('btn-pdf').addEventListener('click', exportToPDF);
-
-document.getElementById('demo-btn').addEventListener('click', () => {
-  hideSetup();
-  showLoading(true);
-  setTimeout(() => {
-    loadDemo();
-    showLoading(false);
-    toast('📊 Mostrando datos de demostración');
-  }, 300);
-});
-
-document.getElementById('filter-bar').addEventListener('click', e => {
-  const btn = e.target.closest('.filter-btn');
-  if (!btn) return;
-  activeFilter = btn.dataset.filter;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b === btn));
-  renderCards();
-});
-
-document.getElementById('search-input').addEventListener('input', e => {
-  searchQuery = e.target.value;
-  renderCards();
-});
-
-function showSetup() {
-  const url    = localStorage.getItem(LS_KEY);
-  const cfgUrl = localStorage.getItem(LS_CFG_URL);
-  const helpUrl2 = localStorage.getItem(LS_HELP_URL);
-  if (url)      document.getElementById('sheets-url-input').value = url;
-  if (cfgUrl)   document.getElementById('config-url-input').value = cfgUrl;
-  if (helpUrl2) document.getElementById('help-url-input').value   = helpUrl2;
-  document.getElementById('setup-overlay').classList.remove('hidden');
-}
-function hideSetup() {
+document.getElementById('btn-export').addEventListener('click',exportToExcel);
+document.getElementById('btn-pdf').addEventListener('click',exportToPDF);
+document.getElementById('demo-btn').addEventListener('click',async function(){
   document.getElementById('setup-overlay').classList.add('hidden');
-}
+  await loadData(DEFAULT_DATA_URL);
+  document.getElementById('landing-overlay').classList.add('hidden');
+});
+document.getElementById('filter-bar').addEventListener('click',function(e){
+  const btn=e.target.closest('[data-filter]');
+  if(!btn)return;
+  activeFilter=btn.dataset.filter;
+  document.querySelectorAll('#filter-bar [data-filter]').forEach(function(b){
+    b.classList.toggle('active',b===btn);
+  });
+  renderCards();
+});
+document.getElementById('search-input').addEventListener('input',function(e){
+  searchQuery=e.target.value.trim().toLowerCase();
+  renderCards();
+});
+document.getElementById('btn-help').addEventListener('click',openHelpPanel);
 
-
-// ══════════════════════════════════════════════
-//  HELP PANEL
-// ══════════════════════════════════════════════
-
-// Inyectar estilos del drawer dinámicamente (sin tocar el <style> existente)
 (function injectHelpStyles() {
-  const s = document.createElement('style');
-  s.textContent = `
-    #help-overlay {
-      position: fixed; inset: 0;
-      background: rgba(15,30,54,.5);
-      backdrop-filter: blur(2px);
-      z-index: 500;
-      opacity: 0; pointer-events: none;
-      transition: opacity .25s ease;
-    }
-    #help-overlay.open { opacity: 1; pointer-events: all; }
-    #help-drawer {
-      position: fixed; top: 0; right: 0; bottom: 0;
-      width: min(500px, 96vw);
-      background: #f8fafc;
-      z-index: 501;
-      box-shadow: -6px 0 40px rgba(0,0,0,.18);
-      display: flex; flex-direction: column;
-      transform: translateX(100%);
-      transition: transform .28s cubic-bezier(.4,0,.2,1);
-      overflow: hidden;
-    }
-    #help-drawer.open { transform: translateX(0); }
-    .help-header {
-      background: #0f1e36; color: #fff;
-      padding: 16px 18px;
-      display: flex; align-items: center; justify-content: space-between;
-      flex-shrink: 0;
-      border-bottom: 2px solid #c8d400;
-    }
-    .help-header-title {
-      font-size: 15px; font-weight: 700;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .help-close-btn {
-      background: rgba(255,255,255,.1); border: none; color: #fff;
-      border-radius: 6px; width: 30px; height: 30px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 16px; transition: background .15s;
-    }
-    .help-close-btn:hover { background: rgba(255,255,255,.25); }
-    #help-body { flex: 1; overflow-y: auto; padding: 18px 16px 36px; }
-    .help-section { margin-bottom: 22px; }
-    .help-section-hdr {
-      font-size: 10.5px; font-weight: 800; color: #64748b;
-      text-transform: uppercase; letter-spacing: 1.3px;
-      margin-bottom: 10px;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .help-section-hdr::after { content:''; flex:1; height:1px; background:#e2e8f0; }
-    /* TITULO */
-    .hc-titulo {
-      background: linear-gradient(135deg,#0f1e36 0%,#1a4080 100%);
-      color: #fff; border-radius: 12px; padding: 20px 18px; margin-bottom: 8px;
-    }
-    .hc-titulo .hci { font-size: 30px; margin-bottom: 10px; display: block; }
-    .hc-titulo .hct { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
-    .hc-titulo .hcs { font-size: 11px; color: #c8d400; font-weight: 700; margin-bottom: 10px; letter-spacing: .5px; text-transform: uppercase; }
-    .hc-titulo .hcc { font-size: 13px; color: rgba(255,255,255,.82); line-height: 1.65; }
-    /* BLOQUE */
-    .hc-bloque {
-      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
-      padding: 14px 15px; margin-bottom: 8px;
-      display: flex; gap: 12px; align-items: flex-start;
-    }
-    .hc-bloque .hci { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
-    .hc-bloque .hct { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 2px; }
-    .hc-bloque .hcs { font-size: 10.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
-    .hc-bloque .hcc { font-size: 13px; color: #475569; line-height: 1.6; }
-    /* ESTADO */
-    .hc-estado {
-      background: #fff; border: 1px solid #e2e8f0; border-left-width: 4px;
-      border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
-      display: flex; gap: 12px; align-items: flex-start;
-    }
-    .hc-estado .hci-wrap {
-      width: 34px; height: 34px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; flex-shrink: 0;
-    }
-    .hc-estado .hct { font-size: 13px; font-weight: 700; margin-bottom: 1px; }
-    .hc-estado .hcs { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
-    .hc-estado .hcc { font-size: 12px; color: #64748b; line-height: 1.55; }
-    /* IMPORTANTE */
-    .hc-importante {
-      background: #fefce8; border: 1px solid #fde047;
-      border-radius: 10px; padding: 14px 15px; margin-bottom: 8px;
-      display: flex; gap: 12px; align-items: flex-start;
-    }
-    .hc-importante .hci { font-size: 20px; flex-shrink: 0; }
-    .hc-importante .hct { font-size: 13px; font-weight: 700; color: #854d0e; margin-bottom: 4px; }
-    .hc-importante .hcc { font-size: 13px; color: #713f12; line-height: 1.6; }
+  var s = document.createElement('style');
+  s.textContent = [
+    '#help-overlay{position:fixed;inset:0;background:rgba(15,30,54,.5);backdrop-filter:blur(2px);z-index:500;opacity:0;pointer-events:none;transition:opacity .25s ease}',
+    '#help-overlay.open{opacity:1;pointer-events:all}',
+    '#help-drawer{position:fixed;top:0;right:0;bottom:0;width:min(520px,96vw);background:#f8fafc;z-index:501;box-shadow:-6px 0 40px rgba(0,0,0,.18);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden}',
+    '#help-drawer.open{transform:translateX(0)}',
+    '.help-header{background:#0f1e36;color:#fff;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;border-bottom:3px solid #c8d400}',
+    '.help-header-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}',
+    '.help-close-btn{background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:6px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:background .15s}',
+    '.help-close-btn:hover{background:rgba(255,255,255,.25)}',
+    '#help-body{flex:1;overflow-y:auto;padding:20px 18px 40px}',
+    /* TITULO hero card */
+    '.hc-titulo{background:linear-gradient(135deg,#0f1e36 0%,#1a4080 100%);color:#fff;border-radius:14px;padding:22px 20px;margin-bottom:18px}',
+    '.hc-titulo .hct{font-size:18px;font-weight:800;margin-bottom:6px;line-height:1.3}',
+    '.hc-titulo .hcs{font-size:11px;color:#c8d400;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}',
+    '.hc-titulo .hcc{font-size:13px;color:rgba(255,255,255,.82);line-height:1.7}',
+    /* Section numbered header */
+    '.help-sec-hdr{display:flex;align-items:center;gap:10px;margin:22px 0 12px}',
+    '.help-sec-badge{width:26px;height:26px;border-radius:50%;background:#0f1e36;color:#c8d400;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.help-sec-label{font-size:15px;font-weight:700;color:#1e40af}',
+    /* BLOQUE card */
+    '.hc-bloque{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 15px;margin-bottom:8px;display:flex;gap:13px;align-items:flex-start}',
+    '.hc-bloque-icon{width:38px;height:38px;border-radius:9px;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#2563eb}',
+    '.hc-bloque-icon svg{width:18px;height:18px}',
+    '.hc-bloque .hct{font-size:13.5px;font-weight:700;color:#1e293b;margin-bottom:3px}',
+    '.hc-bloque .hcs{font-size:10.5px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}',
+    '.hc-bloque .hcc{font-size:13px;color:#475569;line-height:1.65}',
+    /* IMPORTANTE card */
+    '.hc-importante{background:#fefce8;border:1px solid #fde047;border-radius:10px;padding:14px 15px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}',
+    '.hc-importante .hci{font-size:18px;flex-shrink:0;margin-top:1px}',
+    '.hc-importante .hct{font-size:13px;font-weight:700;color:#854d0e;margin-bottom:4px}',
+    '.hc-importante .hcs{font-size:11.5px;color:#92400e;margin-bottom:4px;font-weight:600}',
+    '.hc-importante .hcc{font-size:13px;color:#713f12;line-height:1.6}',
+    /* 3-col states table */
+    '.states-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px;margin-bottom:10px}',
+    '.states-col{background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}',
+    '.states-col-hdr{padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;text-align:center}',
+    '.states-col-body{padding:6px 8px 10px}',
+    '.state-item{display:flex;align-items:flex-start;gap:6px;padding:5px 4px;border-radius:6px}',
+    '.state-item:hover{background:#f8fafc}',
+    '.state-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}',
+    '.state-name{font-size:12px;font-weight:600;color:#1e293b;line-height:1.3}',
+    '.state-en{font-size:10px;color:#94a3b8;font-weight:500}',
+    '.states-link{text-align:center;padding:6px 0 4px;font-size:12px;color:#2563eb;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}',
+    '.states-link:hover{text-decoration:underline}',
     /* Loading */
-    .help-loading { text-align: center; padding: 48px 20px; color: #94a3b8; font-size: 14px; line-height: 1.8; }
-    .help-spinner {
-      width: 30px; height: 30px;
-      border: 3px solid #e2e8f0; border-top-color: #3b82f6;
-      border-radius: 50%; animation: hs-spin .75s linear infinite;
-      margin: 0 auto 12px;
-    }
-    @keyframes hs-spin { to { transform: rotate(360deg); } }
-  `;
+    '.help-loading{text-align:center;padding:48px 20px;color:#94a3b8;font-size:14px;line-height:1.8}',
+    '.help-spinner{width:30px;height:30px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:hs-spin .75s linear infinite;margin:0 auto 12px}',
+    '@keyframes hs-spin{to{transform:rotate(360deg)}}'
+  ].join('');
   document.head.appendChild(s);
 })();
 
-const HELP_SECTION_LABELS = {
-  GENERAL:      'General',
-  INDICADORES:  'Indicadores',
-  GRAFICAS:     'Gráficas',
-  LISTA:        'Lista de tareas',
-  ESTADOS:      'Estados',
-  PENDIENTE:    'Estados · Pendiente',
-  EN_PROGRESO:  'Estados · En Progreso',
-  COMPLETADO:   'Estados · Completado',
-  BLOQUEOS:     'Bloqueos',
-  EVIDENCIAS:   'Evidencias',
-  VERSIONES:    'Versiones y Ambientes',
-  NOTA:         'Notas Importantes',
+/* ── SVG icons per section ────────────────────────────────────────────── */
+var HELP_ICONS = {
+  GENERAL:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  INDICADORES: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>',
+  GRAFICAS:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
+  LISTA:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  CAMPOS:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+  ESTADOS:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
+  BLOQUEOS:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  EVIDENCIAS:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
+  VERSIONES:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  ACCIONES:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 5.34L3.93 6.75M19.07 19.07l-1.41-1.41M5.34 18.66L3.93 17.25M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>',
+  NOTA:        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+};
+
+var HELP_SECTION_LABELS = {
+  GENERAL:     'Información general',
+  INDICADORES: 'Indicadores',
+  GRAFICAS:    'Gráficas',
+  LISTA:       'Lista de tareas',
+  CAMPOS:      'Campos de la tabla',
+  ESTADOS:     'Estados de las actividades',
+  BLOQUEOS:    'Bloqueos',
+  EVIDENCIAS:  'Evidencias',
+  VERSIONES:   'Versiones y ambientes',
+  ACCIONES:    'Interacciones disponibles',
+  NOTA:        'Notas importantes'
+};
+
+/* Color for each state (by TITULO) */
+var STATE_DOT_COLOR = {
+  'Pausada':'#94a3b8','Definición':'#94a3b8','No iniciado':'#94a3b8','Archivado':'#64748b',
+  'Bloqueado':'#ef4444','Rechazada':'#f87171','En desarrollo':'#3b82f6','Terminado en Desarrollo':'#60a5fa',
+  'Terminado en QA':'#14b8a6','En Pruebas SDM':'#f59e0b','Aprobado por SDM':'#10b981',
+  'Despliegue Piloto':'#06b6d4','Piloto Aprobado':'#22c55e','Finalizado':'#22c55e',
+  'En progreso':'#3b82f6'
 };
 
 function openHelpPanel() {
@@ -2662,21 +2428,21 @@ function closeHelpPanel() {
 }
 
 async function loadHelpData() {
-  const body = document.getElementById('help-body');
+  var body = document.getElementById('help-body');
   body.innerHTML = '<div class="help-loading"><div class="help-spinner"></div><div>Cargando guía…</div></div>';
-
-  const helpUrl = localStorage.getItem(LS_HELP_URL);
+  var DEFAULT_HELP_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=1217048699&single=true&output=csv';
+  var helpUrl = localStorage.getItem(LS_HELP_URL) || DEFAULT_HELP_URL;
   if (!helpUrl) {
     body.innerHTML = '<div class="help-loading">⚙️ URL de ayuda no configurada.<br><small>Agrégala en <strong>Configurar → URL hoja Ayuda</strong>.</small></div>';
     return;
   }
   try {
-    const rows = await new Promise((resolve, reject) => {
+    var rows = await new Promise(function(resolve, reject) {
       Papa.parse(helpUrl, {
         download: true, header: true, skipEmptyLines: true,
-        transformHeader: h => (h || '').replace(/^﻿/, '').trim().toUpperCase(),
-        complete: r => resolve(r.data),
-        error:    e => reject(e),
+        transformHeader: function(h) { return (h||'').replace(/^﻿/,'').trim().toUpperCase(); },
+        complete: function(r) { resolve(r.data); },
+        error:    function(e) { reject(e); }
       });
     });
     if (!rows || rows.length === 0) {
@@ -2684,93 +2450,140 @@ async function loadHelpData() {
       return;
     }
     renderHelpContent(rows);
-  } catch {
+  } catch(err) {
     body.innerHTML = '<div class="help-loading">❌ No se pudo cargar la guía.<br><small>Verifica la URL de la hoja AYUDA_DASHBOARD.</small></div>';
   }
 }
 
 function renderHelpContent(rows) {
-  rows.sort((a, b) => parseInt(a.ORDEN || 0) - parseInt(b.ORDEN || 0));
-  const sections = [];
-  const sectionMap = new Map();
-  rows.forEach(row => {
-    const sec = (row.SECCION || '').trim().toUpperCase() || 'GENERAL';
-    if (!sectionMap.has(sec)) { sectionMap.set(sec, []); sections.push(sec); }
-    sectionMap.get(sec).push(row);
+  rows.sort(function(a,b){ return parseInt(a.ORDEN||0) - parseInt(b.ORDEN||0); });
+
+  /* Separate ESTADO rows into groups */
+  var estadoGroups = { PENDIENTE:[], EN_PROGRESO:[], COMPLETADO:[] };
+  var ESTADO_SECS = { PENDIENTE:true, EN_PROGRESO:true, COMPLETADO:true };
+
+  var sections = [];
+  var sectionMap = {};
+
+  rows.forEach(function(row) {
+    var tipo = (row.TIPO||'BLOQUE').trim().toUpperCase();
+    var sec  = (row.SECCION||'GENERAL').trim().toUpperCase();
+    if (tipo === 'ESTADO' && ESTADO_SECS[sec]) {
+      estadoGroups[sec].push(row);
+      return;
+    }
+    if (!sectionMap[sec]) { sectionMap[sec] = []; sections.push(sec); }
+    sectionMap[sec].push(row);
   });
-  const body = document.getElementById('help-body');
-  body.innerHTML = sections.map(sec => {
-    const label = HELP_SECTION_LABELS[sec] || sec;
-    const cards = sectionMap.get(sec).map(renderHelpCard).join('');
-    return `<div class="help-section"><div class="help-section-hdr">${escHtml(label)}</div>${cards}</div>`;
+
+  var secNum = 0;
+  var html = '';
+
+  sections.forEach(function(sec) {
+    var secRows = sectionMap[sec];
+    var hasTitulo = secRows.some(function(r){ return (r.TIPO||'').trim().toUpperCase()==='TITULO'; });
+
+    /* TITULO rows → no numbered header, just the card */
+    if (hasTitulo) {
+      secRows.forEach(function(r) { html += renderHelpCard(r, sec); });
+      return;
+    }
+
+    secNum++;
+    var label = HELP_SECTION_LABELS[sec] || sec;
+    html += '<div class="help-sec-hdr"><span class="help-sec-badge">'+secNum+'</span><span class="help-sec-label">'+escHtml(label)+'</span></div>';
+    secRows.forEach(function(r) { html += renderHelpCard(r, sec); });
+
+    /* After ESTADOS section → insert 3-col states table */
+    if (sec === 'ESTADOS') {
+      html += renderEstadosTable(estadoGroups);
+    }
+  });
+
+  document.getElementById('help-body').innerHTML = html;
+}
+
+function renderEstadosTable(groups) {
+  var cols = [
+    { key:'PENDIENTE',  label:'PENDIENTE',  hdrBg:'#f1f5f9', hdrColor:'#475569' },
+    { key:'EN_PROGRESO',label:'EN PROGRESO', hdrBg:'#eff6ff', hdrColor:'#1d4ed8' },
+    { key:'COMPLETADO', label:'COMPLETADO',  hdrBg:'#f0fdf4', hdrColor:'#166534' }
+  ];
+  var colsHtml = cols.map(function(col) {
+    var items = groups[col.key].map(function(row) {
+      var name  = escHtml(row.TITULO||'');
+      var en    = escHtml(row.SUBTITULO||'');
+      var color = STATE_DOT_COLOR[row.TITULO] || '#94a3b8';
+      return '<div class="state-item">'
+        +'<div class="state-dot" style="background:'+color+'"></div>'
+        +'<div><div class="state-name">'+name+'</div>'
+        +(en ? '<div class="state-en">'+en+'</div>' : '')
+        +'</div></div>';
+    }).join('');
+    return '<div class="states-col">'
+      +'<div class="states-col-hdr" style="background:'+col.hdrBg+';color:'+col.hdrColor+'">'+col.label+'</div>'
+      +'<div class="states-col-body">'+items+'</div>'
+      +'</div>';
   }).join('');
+
+  return '<div class="states-grid">'+colsHtml+'</div>'
+    +'<div class="states-link">'
+    +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 8 16 12 12 16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>'
+    +' Ver flujo completo de estados</div>';
 }
 
-function renderHelpCard(row) {
-  const tipo  = (row.TIPO || 'BLOQUE').trim().toUpperCase();
-  const icon  = row.ICONO  || '';
-  const color = row.COLOR  || '#64748b';
-  const title = escHtml(row.TITULO   || '');
-  const sub   = escHtml(row.SUBTITULO || '');
-  const txt   = escHtml(row.CONTENIDO || '').replace(/\n/g, '<br>');
+function renderHelpCard(row, sec) {
+  var tipo  = (row.TIPO||'BLOQUE').trim().toUpperCase();
+  var title = escHtml(row.TITULO||'');
+  var sub   = escHtml(row.SUBTITULO||'');
+  var txt   = escHtml(row.CONTENIDO||'').replace(/\n/g,'<br>');
+  var icon  = HELP_ICONS[sec] || HELP_ICONS['GENERAL'];
 
-  if (tipo === 'TITULO') return `
-    <div class="hc-titulo">
-      ${icon ? `<span class="hci">${icon}</span>` : ''}
-      <div class="hct">${title}</div>
-      ${sub ? `<div class="hcs">${sub}</div>` : ''}
-      ${txt ? `<div class="hcc">${txt}</div>` : ''}
-    </div>`;
+  if (tipo === 'TITULO') {
+    return '<div class="hc-titulo">'
+      +'<div class="hct">'+title+'</div>'
+      +(sub ? '<div class="hcs">'+sub+'</div>' : '')
+      +(txt ? '<div class="hcc">'+txt+'</div>' : '')
+      +'</div>';
+  }
 
-  if (tipo === 'ESTADO') return `
-    <div class="hc-estado" style="border-left-color:${color}">
-      <div class="hci-wrap" style="background:${color}22">${icon}</div>
-      <div>
-        <div class="hct" style="color:${color}">${title}</div>
-        ${sub ? `<div class="hcs">${sub}</div>` : ''}
-        ${txt ? `<div class="hcc">${txt}</div>` : ''}
-      </div>
-    </div>`;
+  if (tipo === 'IMPORTANTE') {
+    return '<div class="hc-importante">'
+      +'<div class="hci">⚠️</div>'
+      +'<div>'
+      +(title ? '<div class="hct">'+title+'</div>' : '')
+      +(sub   ? '<div class="hcs">'+sub+'</div>'   : '')
+      +(txt   ? '<div class="hcc">'+txt+'</div>'   : '')
+      +'</div></div>';
+  }
 
-  if (tipo === 'IMPORTANTE') return `
-    <div class="hc-importante">
-      <div class="hci">⚠️</div>
-      <div>
-        ${title ? `<div class="hct">${title}</div>` : ''}
-        ${txt   ? `<div class="hcc">${txt}</div>`   : ''}
-      </div>
-    </div>`;
-
-  // Default: BLOQUE
-  return `
-    <div class="hc-bloque">
-      <div class="hci">${icon}</div>
-      <div>
-        <div class="hct">${title}</div>
-        ${sub ? `<div class="hcs">${sub}</div>` : ''}
-        ${txt ? `<div class="hcc">${txt}</div>` : ''}
-      </div>
-    </div>`;
+  /* Default: BLOQUE */
+  return '<div class="hc-bloque">'
+    +'<div class="hc-bloque-icon">'+icon+'</div>'
+    +'<div style="flex:1">'
+    +(title ? '<div class="hct">'+title+'</div>' : '')
+    +(sub   ? '<div class="hcs">'+sub+'</div>'   : '')
+    +(txt   ? '<div class="hcc">'+txt+'</div>'   : '')
+    +'</div></div>';
 }
 
-document.getElementById('btn-help').addEventListener('click', openHelpPanel);
-document.getElementById('help-overlay').addEventListener('click', closeHelpPanel);
-document.getElementById('help-close-btn').addEventListener('click', closeHelpPanel);
 
-(function init() {
-  // Landing visible por defecto
+
+(function init(){
+  updateLanding();
+  loadData(localStorage.getItem(LS_KEY)||DEFAULT_DATA_URL);
 })();
 </script>
 
-<!-- ── HELP DRAWER ──────────────────────────────────────────────── -->
-<div id="help-overlay"></div>
+<!-- ── HELP DRAWER ── -->
+<div id="help-overlay" onclick="closeHelpPanel()"></div>
 <div id="help-drawer">
   <div class="help-header">
     <div class="help-header-title">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       Guía de uso — SDM Sprints
     </div>
-    <button class="help-close-btn" id="help-close-btn" aria-label="Cerrar">&#x2715;</button>
+    <button class="help-close-btn" id="help-close-btn" aria-label="Cerrar" onclick="closeHelpPanel()">&#x2715;</button>
   </div>
   <div id="help-body">
     <div class="help-loading"><div class="help-spinner"></div><div>Cargando guía…</div></div>
