@@ -1344,6 +1344,23 @@ function parseSprintName(s) {
   return name || null;
 }
 
+// Normaliza nombre de sprint: "2" → "Sprint 2", rechaza IDs tipo 784, 788
+function normalizeSprintName(s) {
+  if (!s) return '';
+  s = s.trim();
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    if (n < 1 || n > 99) return '';
+    return 'Sprint ' + n;
+  }
+  if (/^sprint\s+\d+$/i.test(s)) {
+    const n = parseInt(s.match(/\d+/)[0], 10);
+    if (n < 1 || n > 99) return '';
+    return 'Sprint ' + n;
+  }
+  return s;
+}
+
 function sprintNumber(name) {
   const m = name && name.match(/(\d+)/);
   return m ? parseInt(m[1]) : 999;
@@ -2089,11 +2106,21 @@ function toast(msg, ms = 3000) {
   setTimeout(() => t.classList.remove('show'), ms);
 }
 
-// Wrapper: descarga un CSV remoto usando PapaParse
-async function fetchCSV(url) {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('Error ' + resp.status + ' al obtener datos');
-  return resp.text();
+// Wrapper: descarga un CSV remoto usando PapaParse (download:true maneja redirects de Google Sheets)
+function fetchCSV(url) {
+  return new Promise(function(resolve, reject) {
+    Papa.parse(url, {
+      download: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        var rows = results.data;
+        if (!rows || rows.length === 0) return reject(new Error('CSV vacío'));
+        // Papa.unparse re-construye el CSV respetando comillas en celdas con comas
+        resolve(Papa.unparse(rows));
+      },
+      error: function(err) { reject(err); }
+    });
+  });
 }
 
 const LS_CORTE      = 'sdm_last_corte';
