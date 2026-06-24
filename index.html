@@ -944,7 +944,47 @@
     }
     /* Ocultar en pantalla */
     #pdf-header { display: none; }
-  </style>
+  
+/* ── FLOW MODAL ── */
+.states-link:hover { background: #eff6ff; text-decoration: underline; }
+#flow-modal {
+  position: fixed; inset: 0;
+  background: rgba(10,20,40,.88);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+#flow-modal.open { opacity: 1; pointer-events: all; }
+.flow-box {
+  position: relative; max-width: 96vw; max-height: 93vh;
+  background: #fff; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,.55);
+  display: flex; flex-direction: column;
+}
+.flow-bar {
+  background: #0f1e36; color: #fff;
+  padding: 11px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; border-bottom: 3px solid #c8d400;
+}
+.flow-bar-title { font-size: 13px; font-weight: 700; letter-spacing: .3px; }
+.flow-close {
+  background: rgba(255,255,255,.12); border: none; color: #fff;
+  border-radius: 7px; padding: 5px 14px; font-size: 13px;
+  cursor: pointer; transition: background .15s;
+}
+.flow-close:hover { background: rgba(255,255,255,.25); }
+.flow-img-wrap {
+  overflow: auto; flex: 1;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 16px; background: #f0f4f8;
+}
+#flow-modal-img { max-width: 100%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.2); }
+#flow-modal-msg { padding: 40px; text-align: center; color: #64748b; font-size: 14px; line-height: 1.8; }
+#flow-modal-msg strong { display: block; font-size: 15px; color: #1e293b; margin-bottom: 8px; }
+#flow-modal-msg code { background: #e0e7ff; color: #3730a3; padding: 2px 7px; border-radius: 4px; font-size: 12px; }
+</style>
 </head>
 <body>
 
@@ -982,6 +1022,10 @@
 
     <div class="setup-input-label" style="margin-top:10px">URL hoja Ayuda (AYUDA_DASHBOARD) <span style="font-weight:400;color:#94a3b8">opcional</span></div>
     <input type="url" id="help-url-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?gid=XXXX&output=csv" style="width:100%;border:2px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none;margin-bottom:14px"/>
+
+    <div class="setup-input-label" style="margin-top:10px">URL imagen — Flujo de estados <span style="font-weight:400;color:#94a3b8">opcional</span></div>
+    <input type="url" id="flujo-img-input" placeholder="https://raw.githubusercontent.com/usuario/repo/main/flujo.png" style="width:100%;border:2px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none;margin-bottom:6px"/>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:14px">Sube la imagen del diagrama a tu repo de GitHub y pega la URL raw, o usa una ruta relativa como <strong>./flujo.png</strong> si está en la misma carpeta.</div>
 
     <div id="setup-error">No se pudo cargar el archivo. Verifica que el enlace sea correcto y esté publicado como CSV.</div>
 
@@ -1323,6 +1367,8 @@ let activeFilter  = 'ALL';
 let searchQuery   = '';
 let reportDate    = null;   // Fecha Reporte del último CSV importado
 const LS_KEY      = 'sdm_sheets_url';
+  const LS_FLUJO_IMG = 'sdm_flujo_img';
+  const DEFAULT_FLUJO_IMG = 'https://raw.githubusercontent.com/ut-comparederas-2025/sdm-sprints/main/Flujo.jpg';
 
 // ── URLs por defecto (hardcodeadas) ──────────────────────────────────────────
 // Si no hay URL guardada en localStorage, se usan estas automáticamente.
@@ -2256,6 +2302,7 @@ function showSetup(){
   if(di)di.value=localStorage.getItem(LS_KEY)||DEFAULT_DATA_URL;
   if(ci)ci.value=localStorage.getItem(LS_CFG_URL)||DEFAULT_CONFIG_URL;
   if(hi)hi.value=localStorage.getItem(LS_HELP_URL)||'';
+  const fi=document.getElementById('flujo-img-input'); if(fi)fi.value=localStorage.getItem(LS_FLUJO_IMG)||DEFAULT_FLUJO_IMG||'';
   overlay.classList.remove('hidden');
 }
 
@@ -2284,6 +2331,7 @@ document.getElementById('save-url-btn').addEventListener('click',async function(
   localStorage.setItem(LS_KEY,url.trim());
   if(cfgUrl.trim())localStorage.setItem(LS_CFG_URL,cfgUrl.trim());
   if(helpUrl.trim())localStorage.setItem(LS_HELP_URL,helpUrl.trim());
+  const flujoUrl=(document.getElementById('flujo-img-input')||{}).value||''; if(flujoUrl.trim())localStorage.setItem(LS_FLUJO_IMG,flujoUrl.trim());
   document.getElementById('setup-overlay').classList.add('hidden');
   await loadData(url.trim());
   document.getElementById('landing-overlay').classList.add('hidden');
@@ -2366,7 +2414,8 @@ document.getElementById('btn-help').addEventListener('click',openHelpPanel);
     '.state-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}',
     '.state-name{font-size:12px;font-weight:600;color:#1e293b;line-height:1.3}',
     '.state-en{font-size:10px;color:#94a3b8;font-weight:500}',
-    '.states-link{text-align:center;padding:6px 0 4px;font-size:12px;color:#2563eb;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}',
+    '.states-link{text-align:center;padding:6px 0 4px;font-size:12px;color:#2563eb;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;border-radius:8px;transition:background .15s}',
+    '.states-link:hover{background:#eff6ff;text-decoration:underline}',
     '.states-link:hover{text-decoration:underline}',
     /* Loading */
     '.help-loading{text-align:center;padding:48px 20px;color:#94a3b8;font-size:14px;line-height:1.8}',
@@ -2525,7 +2574,7 @@ function renderEstadosTable(groups) {
   }).join('');
 
   return '<div class="states-grid">'+colsHtml+'</div>'
-    +'<div class="states-link">'
+    +'<div class="states-link" onclick="openFlowModal()" title="Ver diagrama completo" style="cursor:pointer">'
     +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 8 16 12 12 16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>'
     +' Ver flujo completo de estados</div>';
 }
@@ -2567,6 +2616,28 @@ function renderHelpCard(row, sec) {
 
 
 
+function openFlowModal(){
+  var url=localStorage.getItem(LS_FLUJO_IMG)||DEFAULT_FLUJO_IMG||'';
+  var modal=document.getElementById('flow-modal');
+  var img=document.getElementById('flow-modal-img');
+  var msg=document.getElementById('flow-modal-msg');
+  if(!url){
+    if(img)img.style.display='none';
+    if(msg)msg.style.display='block';
+  } else {
+    if(img){ img.src=url; img.style.display='block'; }
+    if(msg)msg.style.display='none';
+  }
+  if(modal)modal.classList.add('open');
+  document.addEventListener('keydown',_flowEsc);
+}
+function closeFlowModal(){
+  var modal=document.getElementById('flow-modal');
+  if(modal)modal.classList.remove('open');
+  document.removeEventListener('keydown',_flowEsc);
+}
+function _flowEsc(e){ if(e.key==='Escape')closeFlowModal(); }
+
 (function init(){
   updateLanding();
   loadData(localStorage.getItem(LS_KEY)||DEFAULT_DATA_URL);
@@ -2588,5 +2659,26 @@ function renderHelpCard(row, sec) {
   </div>
 </div>
 
+<!-- ── FLOW MODAL ── -->
+<div id="flow-modal" onclick="if(event.target===this)closeFlowModal()">
+  <div class="flow-box">
+    <div class="flow-bar">
+      <span class="flow-bar-title">🔄 Ciclo de vida de una tarea — Flujo completo de estados</span>
+      <button class="flow-close" onclick="closeFlowModal()">✕ Cerrar</button>
+    </div>
+    <div class="flow-img-wrap">
+      <img id="flow-modal-img" src="" alt="Flujo completo de estados" style="display:none"/>
+      <div id="flow-modal-msg" style="display:none">
+        <strong>⚙️ Imagen no configurada</strong>
+        Sube el diagrama a GitHub (o cualquier URL pública) y regístrala en<br>
+        <strong>⚙️ Configurar → URL imagen Flujo de estados</strong><br><br>
+        Ejemplo de URL raw de GitHub:<br>
+        <code>https://raw.githubusercontent.com/usuario/repo/main/flujo.png</code><br>
+        O si está en la misma carpeta que el index.html:<br>
+        <code>./flujo.png</code>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
