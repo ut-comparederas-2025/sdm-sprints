@@ -8,7 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <!-- v2026-07-06: homologación de estados, panel detalle por estado, etiquetas en gráficas -->
+  <!-- v2026-07-07: homologación estados + panel detalle + etiquetas gráficas + Entorno/FASE -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1566,11 +1566,17 @@ function parseRow(rowObj) {
   const dueDate    = formatDate(dueRaw);
   const fechaRep   = get('Fecha Reporte');
   // Producción: columna "En producción?" = Sí/Yes, o estado es Despliegue/Piloto/Finalizado
-  const prodRaw = get('En producción?').toLowerCase();
-  const prodByCol = ['sí','si','yes','true','1'].includes(prodRaw);
+  // Producción (en orden de prioridad):
+  //  1) Columna "En producción?" (archivos antiguos: Si/No)
+  //  2) Columna "Entorno" (archivo nuevo: "Amb Productivo" / "Amb Pruebas")
+  //  3) Fallback por estado
   const PROD_STATUSES = ['Despliegue Piloto','Piloto Aprobado','Finalizado','Finalizado (Hotfix)','Completado','Done','Done - Hotfix'];
-  const prodByStatus = PROD_STATUSES.includes(status.label) ||
-                       PROD_STATUSES.includes(get('Status').trim());
+  const prodRaw    = get('En producción?').trim().toLowerCase();
+  const entornoRaw = (get('Entorno') || get('Ambiente') || '').trim().toLowerCase();
+  let enProduccion;
+  if (prodRaw)         enProduccion = ['sí','si','yes','true','1'].includes(prodRaw);
+  else if (entornoRaw) enProduccion = entornoRaw.includes('productivo');
+  else enProduccion = PROD_STATUSES.includes(status.label) || PROD_STATUSES.includes(get('Status').trim());
   return {
     id:          get('Propiedad'),
     name:        get('Descripción'),
@@ -1583,7 +1589,9 @@ function parseRow(rowObj) {
     overdue:     isOverdue(dueDate),
     lastEdit:    get('Last edited time'),
     fechaReporte: fechaRep,
-    enProduccion: prodByCol || prodByStatus,
+    enProduccion,
+    entorno: get('Entorno'),
+    fase:    get('Fase'),
   };
 }
 
@@ -2191,10 +2199,16 @@ function renderAll() {
 //  DATA LOADING
 // ══════════════════════════════════════════════
 function processCSV(csvText) {
+  const seenHeaders = {};
   const result = Papa.parse(csvText, {
     header: true,           // PapaParse genera objetos {col: valor} — maneja comas en campos automáticamente
     skipEmptyLines: true,
-    transformHeader: h => (h || '').replace(/^﻿/, '').trim(),  // limpia BOM y espacios
+    transformHeader: h => {
+      h = (h || '').replace(/^﻿/, '').trim();  // limpia BOM y espacios
+      if (seenHeaders[h]) { seenHeaders[h]++; return h + '__' + seenHeaders[h]; }  // duplicados: la 1ª gana
+      seenHeaders[h] = 1;
+      return h;
+    },
   });
   const rows = result.data;
   if (!rows || rows.length < 1) throw new Error('CSV vacío o inválido');
