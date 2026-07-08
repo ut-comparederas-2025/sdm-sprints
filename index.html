@@ -8,7 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <!-- v2026-07-07: homologación estados + panel detalle + etiquetas gráficas + Entorno/FASE -->
+  <!-- v2026-07-06: homologación de estados, panel detalle por estado, etiquetas en gráficas -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1416,22 +1416,14 @@ let activeStatusLabel = null;   // filtro por estado individual (panel Detalle p
 let searchQuery   = '';
 let reportDate    = null;   // Fecha Reporte del último CSV importado
 const LS_KEY      = 'sdm_sheets_url';
-// Migración: purgar URLs guardadas que apunten al archivo viejo (xlsx, ya sin publicación válida)
-(function purgeOldUrls(){
-  const OLD_CODE = '2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA';
-  ['sdm_sheets_url','sdm_config_url','sdm_help_url'].forEach(function(k){
-    const v = localStorage.getItem(k);
-    if (v && v.indexOf(OLD_CODE) !== -1) localStorage.removeItem(k);
-  });
-})();
   const LS_FLUJO_IMG = 'sdm_flujo_img';
   const DEFAULT_FLUJO_IMG = 'https://raw.githubusercontent.com/ut-comparederas-2025/sdm-sprints/main/Flujo.jpg';
 
 // ── URLs por defecto (hardcodeadas) ──────────────────────────────────────────
 // Si no hay URL guardada en localStorage, se usan estas automáticamente.
 // Para cambiar la fuente de datos, usa el ícono ⚙️ en el dashboard.
-const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=1877682083&single=true&output=csv';  // Avance Sprint
-const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=2142401314&single=true&output=csv';  // Hoja2 (config sprints)
+const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?output=csv';
+const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=2142401314&single=true&output=csv';
 
 // ══════════════════════════════════════════════
 //  HELPERS
@@ -1574,17 +1566,11 @@ function parseRow(rowObj) {
   const dueDate    = formatDate(dueRaw);
   const fechaRep   = get('Fecha Reporte');
   // Producción: columna "En producción?" = Sí/Yes, o estado es Despliegue/Piloto/Finalizado
-  // Producción (en orden de prioridad):
-  //  1) Columna "En producción?" (archivos antiguos: Si/No)
-  //  2) Columna "Entorno" (archivo nuevo: "Amb Productivo" / "Amb Pruebas")
-  //  3) Fallback por estado
+  const prodRaw = get('En producción?').toLowerCase();
+  const prodByCol = ['sí','si','yes','true','1'].includes(prodRaw);
   const PROD_STATUSES = ['Despliegue Piloto','Piloto Aprobado','Finalizado','Finalizado (Hotfix)','Completado','Done','Done - Hotfix'];
-  const prodRaw    = get('En producción?').trim().toLowerCase();
-  const entornoRaw = (get('Entorno') || get('Ambiente') || '').trim().toLowerCase();
-  let enProduccion;
-  if (prodRaw)         enProduccion = ['sí','si','yes','true','1'].includes(prodRaw);
-  else if (entornoRaw) enProduccion = entornoRaw.includes('productivo');
-  else enProduccion = PROD_STATUSES.includes(status.label) || PROD_STATUSES.includes(get('Status').trim());
+  const prodByStatus = PROD_STATUSES.includes(status.label) ||
+                       PROD_STATUSES.includes(get('Status').trim());
   return {
     id:          get('Propiedad'),
     name:        get('Descripción'),
@@ -1597,9 +1583,7 @@ function parseRow(rowObj) {
     overdue:     isOverdue(dueDate),
     lastEdit:    get('Last edited time'),
     fechaReporte: fechaRep,
-    enProduccion,
-    entorno: get('Entorno'),
-    fase:    get('Fase'),
+    enProduccion: prodByCol || prodByStatus,
   };
 }
 
@@ -2207,16 +2191,10 @@ function renderAll() {
 //  DATA LOADING
 // ══════════════════════════════════════════════
 function processCSV(csvText) {
-  const seenHeaders = {};
   const result = Papa.parse(csvText, {
     header: true,           // PapaParse genera objetos {col: valor} — maneja comas en campos automáticamente
     skipEmptyLines: true,
-    transformHeader: h => {
-      h = (h || '').replace(/^﻿/, '').trim();  // limpia BOM y espacios
-      if (seenHeaders[h]) { seenHeaders[h]++; return h + '__' + seenHeaders[h]; }  // duplicados: la 1ª gana
-      seenHeaders[h] = 1;
-      return h;
-    },
+    transformHeader: h => (h || '').replace(/^﻿/, '').trim(),  // limpia BOM y espacios
   });
   const rows = result.data;
   if (!rows || rows.length < 1) throw new Error('CSV vacío o inválido');
@@ -2634,7 +2612,7 @@ function closeHelpPanel() {
 async function loadHelpData() {
   var body = document.getElementById('help-body');
   body.innerHTML = '<div class="help-loading"><div class="help-spinner"></div><div>Cargando guía…</div></div>';
-  var DEFAULT_HELP_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=1217048699&single=true&output=csv';  // AYUDA_DASHBOARD
+  var DEFAULT_HELP_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=1217048699&single=true&output=csv';
   var helpUrl = localStorage.getItem(LS_HELP_URL) || DEFAULT_HELP_URL;
   if (!helpUrl) {
     body.innerHTML = '<div class="help-loading">⚙️ URL de ayuda no configurada.<br><small>Agrégala en <strong>Configurar → URL hoja Ayuda</strong>.</small></div>';
