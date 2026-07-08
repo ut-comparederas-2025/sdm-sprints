@@ -6,7 +6,9 @@
   <title>SDM – Seguimiento de Sprints</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- v2026-07-06: homologación de estados, panel detalle por estado, etiquetas en gráficas -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -793,6 +795,24 @@
       .header-title { display: none; }
     }
 
+    /* ─── Panel detalle por estado ─── */
+    .status-panel { background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
+    .status-panel-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+    .status-panel-title { font-weight:700; font-size:14px; }
+    .status-panel-hint { font-size:11px; color:#94a3b8; }
+    .status-panel-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .sp-col { border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+    .sp-col-head { font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; border-radius:6px; padding:4px 8px; text-align:center; margin-bottom:6px; }
+    .sp-item { display:flex; justify-content:space-between; align-items:center; gap:6px; padding:5px 6px; font-size:12.5px; border-radius:6px; cursor:pointer; border:1px solid transparent; }
+    .sp-item:hover { background:#f8fafc; }
+    .sp-item.zero { opacity:.4; cursor:default; }
+    .sp-item.zero:hover { background:transparent; }
+    .sp-item.active { background:#eff6ff; border-color:#93c5fd; font-weight:600; }
+    .sp-count { font-size:11px; font-weight:700; border-radius:10px; padding:1px 8px; white-space:nowrap; }
+    .status-filter-chip { margin-top:10px; font-size:12px; }
+    .status-filter-chip button { border:none; background:#dbeafe; color:#1d4ed8; border-radius:12px; padding:4px 12px; font-weight:600; cursor:pointer; font-size:12px; }
+    .status-filter-chip button:hover { background:#bfdbfe; }
+
     /* ─── PDF / PRINT ─── */
     @media print {
       @page { size: A4 landscape; margin: 12mm 10mm; }
@@ -1286,6 +1306,16 @@
     <div id="carryover-list"></div>
   </div>
 
+  <!-- Detalle por estado -->
+  <div class="status-panel" id="status-panel">
+    <div class="status-panel-head">
+      <div class="status-panel-title">Detalle por estado</div>
+      <div class="status-panel-hint">clic en un estado para filtrar la lista de tareas</div>
+    </div>
+    <div class="status-panel-grid" id="status-panel-grid"></div>
+    <div class="status-filter-chip" id="status-filter-chip" style="display:none"></div>
+  </div>
+
   <!-- Filters + view toggle -->
   <!-- Fila 1: filtros + búsqueda -->
   <div class="filter-bar" id="filter-bar">
@@ -1318,41 +1348,54 @@
 //  STATUS CONFIG
 // ══════════════════════════════════════════════
 const STATUS_MAP = {
-  // PENDIENTE
-  'No iniciado':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
-  'Not Started':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  // ── PENDIENTE ──
   'Pausada':       { label:'Pausada',                  cat:'PENDIENTE',   bg:'#e5e7eb', color:'#374151', emoji:'⚫' },
   'Paused':        { label:'Pausada',                  cat:'PENDIENTE',   bg:'#e5e7eb', color:'#374151', emoji:'⚫' },
-  'Definición':    { label:'Definición',               cat:'PENDIENTE',   bg:'#fff7ed', color:'#c2410c', emoji:'🟠' },
   'Defining':      { label:'Definición',               cat:'PENDIENTE',   bg:'#fff7ed', color:'#c2410c', emoji:'🟠' },
-  'Not Started':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  'Definición':    { label:'Definición',               cat:'PENDIENTE',   bg:'#fff7ed', color:'#c2410c', emoji:'🟠' },
   'Not started':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
-  'Archivado':     { label:'Archivado',                cat:'PENDIENTE',   bg:'#f3f4f6', color:'#6b7280', emoji:'⚫' },
-  'Archived':      { label:'Archivado',                cat:'PENDIENTE',   bg:'#f3f4f6', color:'#6b7280', emoji:'⚫' },
-  // EN PROGRESO
-  'En desarrollo': { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
-  'In Progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
-  'In progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
-  'in progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
-  'Bloqueado':     { label:'Bloqueado',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
+  'Not Started':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  'No iniciado':   { label:'No iniciado',              cat:'PENDIENTE',   bg:'#f1f5f9', color:'#475569', emoji:'⚪' },
+  // ── EN PROGRESO ──
   'Blocked':       { label:'Bloqueado',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
-  'Terminado en Desarrollo': { label:'Term. Desarrollo', cat:'EN PROGRESO', bg:'#fffbeb', color:'#b45309', emoji:'🟡' },
-  'Completed in Development':{ label:'Term. Desarrollo', cat:'EN PROGRESO', bg:'#fffbeb', color:'#b45309', emoji:'🟡' },
+  'Bloqueado':     { label:'Bloqueado',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
+  'In progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
+  'In Progress':   { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
+  'En desarrollo': { label:'En desarrollo',            cat:'EN PROGRESO', bg:'#eff6ff', color:'#1d4ed8', emoji:'🔵' },
+  'Terminado en DESA':        { label:'Terminado en Desarrollo', cat:'EN PROGRESO', bg:'#fffbeb', color:'#b45309', emoji:'🟡' },
+  'Terminado en Desarrollo':  { label:'Terminado en Desarrollo', cat:'EN PROGRESO', bg:'#fffbeb', color:'#b45309', emoji:'🟡' },
+  'Completed in Development': { label:'Terminado en Desarrollo', cat:'EN PROGRESO', bg:'#fffbeb', color:'#b45309', emoji:'🟡' },
   'Rechazada':     { label:'Rechazada',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
   'Rejected':      { label:'Rechazada',                cat:'EN PROGRESO', bg:'#fef2f2', color:'#b91c1c', emoji:'🔴' },
-  // COMPLETADO
-  'Terminado en QA':  { label:'Term. en QA',           cat:'COMPLETADO',  bg:'#fefce8', color:'#a16207', emoji:'🟡' },
-  'Completed in QA':  { label:'Term. en QA',           cat:'COMPLETADO',  bg:'#fefce8', color:'#a16207', emoji:'🟡' },
+  // ── COMPLETADO ──
+  'Terminado en QA':  { label:'Terminado en QA',       cat:'COMPLETADO',  bg:'#fefce8', color:'#a16207', emoji:'🟡' },
+  'Completed in QA':  { label:'Terminado en QA',       cat:'COMPLETADO',  bg:'#fefce8', color:'#a16207', emoji:'🟡' },
   'En Pruebas SDM':   { label:'En Pruebas SDM',        cat:'COMPLETADO',  bg:'#ecfdf5', color:'#047857', emoji:'🟢' },
   'In SDM Testing':   { label:'En Pruebas SDM',        cat:'COMPLETADO',  bg:'#ecfdf5', color:'#047857', emoji:'🟢' },
-  'Aprobado por SDM': { label:'Aprobado SDM',          cat:'COMPLETADO',  bg:'#e0f2fe', color:'#0369a1', emoji:'🔵' },
-  'Approved by SDM':  { label:'Aprobado SDM',          cat:'COMPLETADO',  bg:'#e0f2fe', color:'#0369a1', emoji:'🔵' },
-  'Despliegue Piloto':{ label:'Despliegue Piloto',      cat:'COMPLETADO',  bg:'#fef3c7', color:'#78350f', emoji:'🟤' },
-  'Pilot Deployment': { label:'Despliegue Piloto',      cat:'COMPLETADO',  bg:'#fef3c7', color:'#78350f', emoji:'🟤' },
-  'Piloto Aprobado':  { label:'Piloto Aprobado',        cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
-  'Pilot Approved':   { label:'Piloto Aprobado',        cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+  'Aprobado por SDM': { label:'Aprobado por SDM',      cat:'COMPLETADO',  bg:'#e0f2fe', color:'#0369a1', emoji:'🔵' },
+  'Approved by SDM':  { label:'Aprobado por SDM',      cat:'COMPLETADO',  bg:'#e0f2fe', color:'#0369a1', emoji:'🔵' },
+  'Despliegue Piloto':{ label:'Despliegue Piloto',     cat:'COMPLETADO',  bg:'#fef3c7', color:'#78350f', emoji:'🟤' },
+  'Pilot Deployment': { label:'Despliegue Piloto',     cat:'COMPLETADO',  bg:'#fef3c7', color:'#78350f', emoji:'🟤' },
+  'Piloto Aprobado':  { label:'Piloto Aprobado',       cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+  'Pilot Approved':   { label:'Piloto Aprobado',       cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+  'Completado':    { label:'Finalizado',               cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
   'Finalizado':    { label:'Finalizado',               cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
   'Done':          { label:'Finalizado',               cat:'COMPLETADO',  bg:'#dcfce7', color:'#15803d', emoji:'🟢' },
+  'Done - Hotfix': { label:'Finalizado (Hotfix)',      cat:'COMPLETADO',  bg:'#fee2e2', color:'#b91c1c', emoji:'🩹' },
+  'Archived':      { label:'Archivado',                cat:'COMPLETADO',  bg:'#f3f4f6', color:'#6b7280', emoji:'⚫' },
+  'Archivado':     { label:'Archivado',                cat:'COMPLETADO',  bg:'#f3f4f6', color:'#6b7280', emoji:'⚫' },
+};
+
+// Orden oficial de estados para el panel "Detalle por estado"
+const STATUS_PANEL_LAYOUT = {
+  'PENDIENTE':   ['Pausada','Definición','No iniciado'],
+  'EN PROGRESO': ['Bloqueado','En desarrollo','Terminado en Desarrollo','Rechazada'],
+  'COMPLETADO':  ['Archivado','Terminado en QA','En Pruebas SDM','Aprobado por SDM','Despliegue Piloto','Piloto Aprobado','Finalizado','Finalizado (Hotfix)'],
+};
+const CAT_META = {
+  'PENDIENTE':   { title:'Pendiente',   bg:'#f1f5f9', color:'#475569' },
+  'EN PROGRESO': { title:'En Progreso', bg:'#eff6ff', color:'#1d4ed8' },
+  'COMPLETADO':  { title:'Completado',  bg:'#ecfdf5', color:'#047857' },
 };
 
 const PRIORITY_MAP = {
@@ -1369,6 +1412,7 @@ const PRIORITY_MAP = {
 let allTasks      = [];
 let activeSprint  = null;
 let activeFilter  = 'ALL';
+let activeStatusLabel = null;   // filtro por estado individual (panel Detalle por estado)
 let searchQuery   = '';
 let reportDate    = null;   // Fecha Reporte del último CSV importado
 const LS_KEY      = 'sdm_sheets_url';
@@ -1524,8 +1568,9 @@ function parseRow(rowObj) {
   // Producción: columna "En producción?" = Sí/Yes, o estado es Despliegue/Piloto/Finalizado
   const prodRaw = get('En producción?').toLowerCase();
   const prodByCol = ['sí','si','yes','true','1'].includes(prodRaw);
-  const prodByStatus = ['Despliegue Piloto','Piloto Aprobado','Finalizado'].includes(status.label) ||
-                       ['Despliegue Piloto','Piloto Aprobado','Finalizado'].includes(get('Status').trim());
+  const PROD_STATUSES = ['Despliegue Piloto','Piloto Aprobado','Finalizado','Finalizado (Hotfix)','Completado','Done','Done - Hotfix'];
+  const prodByStatus = PROD_STATUSES.includes(status.label) ||
+                       PROD_STATUSES.includes(get('Status').trim());
   return {
     id:          get('Propiedad'),
     name:        get('Descripción'),
@@ -1566,6 +1611,7 @@ function renderSprints() {
   nav.querySelectorAll('.sprint-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       activeSprint = btn.dataset.sprint;
+      activeStatusLabel = null;
       renderSprints();
       renderStats();
       updateSprintInfoBar();
@@ -1584,6 +1630,7 @@ function getFilteredTasks() {
     } else if (activeFilter !== 'ALL' && t.status.cat !== activeFilter) {
       return false;
     }
+    if (activeStatusLabel && t.status.label !== activeStatusLabel) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const inName = t.name.toLowerCase().includes(q);
@@ -1626,6 +1673,50 @@ function renderStats() {
   document.getElementById('count-progreso').textContent  = sprint.filter(t=>t.status.cat==='EN PROGRESO').length;
   document.getElementById('count-bloqueado').textContent = sprint.filter(t=>t.status.label==='Bloqueado').length;
   document.getElementById('count-completado').textContent = done;
+
+  renderStatusPanel();
+}
+
+// ─── Panel "Detalle por estado" ──────────────────────────────────────────────
+function renderStatusPanel() {
+  const grid = document.getElementById('status-panel-grid');
+  if (!grid) return;
+  const st = allTasks.filter(t => t.sprint === activeSprint);
+  const counts = {};
+  st.forEach(t => { counts[t.status.label] = (counts[t.status.label] || 0) + 1; });
+
+  // Meta (color/emoji) por label, tomada del STATUS_MAP
+  const LABEL_META = {};
+  Object.values(STATUS_MAP).forEach(v => { if (!LABEL_META[v.label]) LABEL_META[v.label] = v; });
+
+  grid.innerHTML = Object.keys(STATUS_PANEL_LAYOUT).map(cat => {
+    const meta = CAT_META[cat];
+    let labels = STATUS_PANEL_LAYOUT[cat].filter(l => l !== 'Finalizado (Hotfix)' || counts[l]);
+    // Estados presentes en los datos que no estén en el layout (desconocidos)
+    st.forEach(t => { if (t.status.cat === cat && !labels.includes(t.status.label)) labels.push(t.status.label); });
+    const catTotal = labels.reduce((a, l) => a + (counts[l] || 0), 0);
+    return `<div class="sp-col">
+      <div class="sp-col-head" style="background:${meta.bg};color:${meta.color}">${meta.title} · ${catTotal}</div>
+      ${labels.map(l => {
+        const n = counts[l] || 0;
+        const m = LABEL_META[l] || { bg:'#f1f5f9', color:'#64748b', emoji:'⚪' };
+        const cls = 'sp-item' + (n === 0 ? ' zero' : '') + (activeStatusLabel === l ? ' active' : '');
+        return `<div class="${cls}" data-status-label="${escHtml(l)}">
+          <span>${m.emoji} ${escHtml(l)}</span>
+          <span class="sp-count" style="background:${n ? m.bg : '#f1f5f9'};color:${n ? m.color : '#94a3b8'}">${n}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+
+  const chip = document.getElementById('status-filter-chip');
+  if (activeStatusLabel) {
+    chip.style.display = 'block';
+    chip.innerHTML = `<button data-clear-status>Filtrando: ${escHtml(activeStatusLabel)} ✕</button>`;
+  } else {
+    chip.style.display = 'none';
+    chip.innerHTML = '';
+  }
 }
 
 function catClass(cat) {
@@ -1827,6 +1918,12 @@ function renderCharts() {
   if (typeof Chart === 'undefined') return;
   destroyCharts();
 
+  // Plugin de etiquetas de datos (números visibles en las gráficas)
+  const DL = (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [];
+  const dlDonut = { color:'#1e293b', backgroundColor:'rgba(255,255,255,.75)', borderRadius:4,
+    padding:{top:2,bottom:2,left:5,right:5}, font:{size:11,weight:'700'},
+    formatter: v => v > 0 ? v : '' };
+
   const st    = allTasks.filter(t => t.sprint === activeSprint);
   const total = st.length;
   const done  = st.filter(t => t.status.cat === 'COMPLETADO').length;
@@ -1844,10 +1941,12 @@ function renderCharts() {
         backgroundColor:['#4ade80','#60a5fa','#fbbf24'],
         borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
     },
+    plugins: DL,
     options: { ...chartDefaults, cutout:'68%',
       plugins: {
         legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
-        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total?Math.round(c.parsed/total*100):0}%)` } }
+        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total?Math.round(c.parsed/total*100):0}%)` } },
+        datalabels: dlDonut
       }
     }
   });
@@ -1869,16 +1968,18 @@ function renderCharts() {
         backgroundColor: priLabels.map(l=>priColors[l]||'#94a3b8'),
         borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
     },
+    plugins: DL,
     options: { ...chartDefaults, cutout:'0%',
       plugins: {
         legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
-        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total?Math.round(c.parsed/total*100):0}%)` } }
+        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total?Math.round(c.parsed/total*100):0}%)` } },
+        datalabels: dlDonut
       }
     }
   });
 
   // ── 3. En producción (donut con % en centro) ──
-  const pendDeploy = st.filter(t => ['Aprobado SDM','En Pruebas SDM','Term. en QA'].includes(t.status.label)).length;
+  const pendDeploy = st.filter(t => ['Aprobado por SDM','En Pruebas SDM','Terminado en QA'].includes(t.status.label)).length;
   const inProgress = total - prod - pendDeploy;
   const pctProd = total ? Math.round(prod/total*100) : 0;
   document.getElementById('prod-center-val').textContent = pctProd + '%';
@@ -1890,10 +1991,12 @@ function renderCharts() {
         backgroundColor:['#4ade80','#fbbf24','#60a5fa'],
         borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
     },
+    plugins: DL,
     options: { ...chartDefaults, cutout:'65%',
       plugins: {
         legend:{ position:'bottom', labels:{ font:{size:10}, padding:6, boxWidth:10 } },
-        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed}` } }
+        tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed}` } },
+        datalabels: dlDonut
       }
     }
   });
@@ -1909,10 +2012,13 @@ function renderCharts() {
       datasets:[{ label:'Tareas', data:projEntries.map(([,c])=>c),
         backgroundColor:'#3b82f6', borderRadius:4 }]
     },
+    plugins: DL,
     options: { ...chartDefaults, indexAxis:'y',
-      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.parsed.x} tareas`}} },
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.parsed.x} tareas`}},
+        datalabels:{ anchor:'end', align:'end', offset:2, clip:false,
+          color:'#334155', font:{size:11,weight:'700'}, formatter: v => v > 0 ? v : '' } },
       scales:{
-        x:{ticks:{stepSize:1,font:{size:11}}, grid:{color:'#f0f4f8'}},
+        x:{ticks:{stepSize:1,font:{size:11}}, grid:{color:'#f0f4f8'}, grace:'15%'},
         y:{ticks:{font:{size:10}}, grid:{display:false}}
       }
     }
@@ -1932,8 +2038,10 @@ function renderCharts() {
         { label:'Completado',  data:byS('COMPLETADO'),  backgroundColor:'#4ade80', borderRadius:3 },
       ]
     },
+    plugins: DL,
     options: { ...chartDefaults,
-      plugins:{ legend:{position:'bottom', labels:{font:{size:11},padding:10,boxWidth:10}} },
+      plugins:{ legend:{position:'bottom', labels:{font:{size:11},padding:10,boxWidth:10}},
+        datalabels:{ color:'#1e293b', font:{size:10,weight:'700'}, formatter: v => v > 0 ? v : '' } },
       scales:{
         x:{stacked:true, ticks:{font:{size:11}}, grid:{display:false}},
         y:{stacked:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'#f0f4f8'}}
@@ -2364,9 +2472,25 @@ document.getElementById('filter-bar').addEventListener('click',function(e){
   const btn=e.target.closest('[data-filter]');
   if(!btn)return;
   activeFilter=btn.dataset.filter;
+  activeStatusLabel=null;
   document.querySelectorAll('#filter-bar [data-filter]').forEach(function(b){
     b.classList.toggle('active',b===btn);
   });
+  renderStatusPanel();
+  renderCards();
+});
+document.getElementById('status-panel').addEventListener('click',function(e){
+  if (e.target.closest('[data-clear-status]')) {
+    activeStatusLabel=null;
+    renderStatusPanel();
+    renderCards();
+    return;
+  }
+  const item=e.target.closest('[data-status-label]');
+  if(!item||item.classList.contains('zero'))return;
+  const lbl=item.dataset.statusLabel;
+  activeStatusLabel=(activeStatusLabel===lbl)?null:lbl;
+  renderStatusPanel();
   renderCards();
 });
 document.getElementById('search-input').addEventListener('input',function(e){
