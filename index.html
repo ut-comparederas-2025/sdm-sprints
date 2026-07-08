@@ -1362,6 +1362,15 @@
 
   <!-- Task view (cards or list) -->
   <div id="task-view"></div>
+
+  <!-- Compromisos trabajados en el sprint activo -->
+  <div class="carryover-section" id="sprint-compromisos-section" style="display:none">
+    <div class="carryover-header">
+      <div class="carryover-title" id="sprint-compromisos-title">🚀 Compromisos trabajados en este sprint</div>
+      <span class="carryover-badge" id="sprint-compromisos-badge">0</span>
+    </div>
+    <div id="sprint-compromisos-list"></div>
+  </div>
 </main>
 
 <script>
@@ -1591,7 +1600,11 @@ function parseRow(rowObj) {
     return '';
   };
   // Solo se usa la columna "Sprint SDM". Se normaliza y valida (rechaza IDs tipo 784, 788).
-  const sprint = normalizeSprintName(get('Sprint SDM')) || null;
+  // "C" = avance de COMPROMISOS: no es un sprint (no crea pestaña ni entra en KPIs),
+  // pero sí cuenta como avance en la Fase de Implementación (cruce por Propiedad).
+  const sprintRaw = get('Sprint SDM').trim();
+  const esAvanceCompromiso = /^(c|compromisos?|sprint\s+c)$/i.test(sprintRaw);
+  const sprint = esAvanceCompromiso ? null : (normalizeSprintName(sprintRaw) || null);
   const status     = getStatus(get('Status'));
   const projects   = parseProjects(get('Proyecto'));
   const priority   = parsePriority(get('Priority'));
@@ -1625,6 +1638,7 @@ function parseRow(rowObj) {
     enProduccion,
     entorno: get('Entorno'),
     fase:    get('Fase'),
+    esCompromiso: esAvanceCompromiso,
   };
 }
 
@@ -1666,6 +1680,7 @@ function renderSprints() {
         renderCarryOver();
         renderCards();
         renderCharts();
+        renderSprintCompromisos();
       }
     });
   });
@@ -1678,7 +1693,7 @@ function isCompromisosView() { return activeSprint === COMPROMISOS_TAB; }
 
 function toggleMainSections() {
   const hide = isCompromisosView();
-  ['sprint-info-bar','charts-section','carryover-section','status-panel','filter-bar','view-toggle-row','task-view'].forEach(id => {
+  ['sprint-info-bar','charts-section','carryover-section','status-panel','filter-bar','view-toggle-row','task-view','sprint-compromisos-section'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = hide ? 'none' : '';
   });
@@ -1785,7 +1800,8 @@ function renderCompromisos() {
   const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
 
   const fila = (it, grupo) => {
-    const sprintBadges = it.sprints.map(s => ` <span class="cmp-sprint-badge">${escHtml(s)}</span>`).join('');
+    let sprintBadges = it.sprints.map(s => ` <span class="cmp-sprint-badge">${escHtml(s)}</span>`).join('');
+    if (!sprintBadges && it.tasks.length) sprintBadges = ' <span class="cmp-sprint-badge" style="background:#f1f5f9;color:#64748b">Fuera de sprint</span>';
     let estadoHtml;
     if (grupo === 'PREVIO') estadoHtml = '<span class="tbl-status-badge" style="background:#e1f5ee;color:#085041">✔ Cumplido previo</span>';
     else if (it.latest) { const s = it.latest.status; estadoHtml = `<span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span>`; }
@@ -1836,6 +1852,52 @@ function renderCompromisos() {
     ${grupoCard('CUMPLIDO', '✅ Cumplidos en sprints', '#ecfdf5', '#047857', 'trabajados y entregados')}
     ${grupoCard('PREVIO', '✔️ Cumplidos previos (000)', '#e1f5ee', '#065f46', 'no requirieron trabajo')}
   `;
+}
+
+function renderSprintCompromisos() {
+  const section = document.getElementById('sprint-compromisos-section');
+  if (!section) return;
+  if (isCompromisosView() || !compromisosData || !compromisosData.length) { section.style.display = 'none'; return; }
+
+  // Tareas del sprint activo indexadas por Propiedad
+  const byIdSprint = {};
+  allTasks.forEach(t => {
+    if (t.id && t.sprint === activeSprint) {
+      const k = String(t.id).trim();
+      (byIdSprint[k] = byIdSprint[k] || []).push(t);
+    }
+  });
+
+  const items = [];
+  compromisosData.forEach(c => {
+    const id = c.idRaw.replace(/\.0$/, '');
+    if (!id || /^0+$/.test(id)) return;
+    const ts = byIdSprint[id];
+    if (!ts || !ts.length) return;
+    const latest = ts.reduce((a, b) =>
+      ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
+    items.push({ c, id, latest });
+  });
+
+  if (!items.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  document.getElementById('sprint-compromisos-title').textContent = `🚀 Compromisos trabajados en ${activeSprint}`;
+  document.getElementById('sprint-compromisos-badge').textContent = items.length;
+  const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
+  document.getElementById('sprint-compromisos-list').innerHTML = `<table class="carryover-table">
+    <thead><tr><th>#ID</th><th>Compromiso</th><th>Estado</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
+    <tbody>${items.map(x => {
+      const s = x.latest.status;
+      const prod = /productivo/i.test(x.latest.entorno || '');
+      return `<tr>
+        <td style="color:#94a3b8;font-size:11px">#${escHtml(x.id)}</td>
+        <td style="font-weight:600">${escHtml(x.c.criterio)}<div style="font-weight:400;font-size:11px;color:#94a3b8">${escHtml(x.c.aspecto)}</div></td>
+        <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
+        <td>${x.latest.entorno ? `<span class=\"tbl-status-badge\" style=\"background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}\">${escHtml(x.latest.entorno)}</span>` : '—'}</td>
+        <td style="font-size:11.5px;white-space:nowrap">${x.c.fecha ? fmtF(x.c.fecha) : escHtml(x.c.fechaRaw || '—')}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
 }
 
 function exportCompromisosExcel() {
@@ -2425,6 +2487,7 @@ function renderAll() {
     renderCarryOver();
     renderCards();
     renderCharts();
+    renderSprintCompromisos();
   }
   updateTimestamp();
 }
