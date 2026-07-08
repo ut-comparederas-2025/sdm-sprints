@@ -1646,7 +1646,7 @@ function renderSprints() {
   const nav = document.getElementById('sprint-nav');
   nav.innerHTML = `
     <button class="sprint-tab fixed-compromisos ${activeSprint === COMPROMISOS_TAB ? 'active' : ''}"
-            data-sprint="${COMPROMISOS_TAB}">📋 Compromisos</button>
+            data-sprint="${COMPROMISOS_TAB}">🚀 Fase de Implementación</button>
   ` + sprints.map(s => `
     <button class="sprint-tab ${s === activeSprint ? 'active' : ''} ${s === currentSprint ? 'current' : ''}"
             data-sprint="${s}">${s}</button>
