@@ -8,7 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <!-- v2026-07-06: homologación de estados, panel detalle por estado, etiquetas en gráficas -->
+  <!-- v2026-07-07: homologación estados + panel detalle + etiquetas gráficas + Entorno/FASE -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -795,6 +795,24 @@
       .header-title { display: none; }
     }
 
+    /* ─── Pestaña Compromisos ─── */
+    .sprint-tab.fixed-compromisos { background:#4c1d95; color:#ede9fe; border-color:#4c1d95; font-weight:700; }
+    .sprint-tab.fixed-compromisos:hover { background:#5b21b6; color:#fff; border-color:#5b21b6; }
+    .sprint-tab.fixed-compromisos.active { background:#2e1065; border-color:#2e1065; color:#fff; }
+    .cmp-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:14px; }
+    .cmp-kpi { background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:11px 13px; }
+    .cmp-kpi .lbl { font-size:10.5px; color:#94a3b8; text-transform:uppercase; letter-spacing:.4px; font-weight:700; }
+    .cmp-kpi .val { font-size:22px; font-weight:800; color:#1e293b; }
+    .cmp-kpi .sub { font-size:10.5px; color:#94a3b8; }
+    .cmp-group { background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px; }
+    .cmp-group-head { border-radius:6px; padding:5px 10px; font-size:12px; font-weight:700; letter-spacing:.3px; margin-bottom:6px; }
+    .cmp-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .cmp-table th { text-align:left; padding:4px 8px; font-size:11px; color:#94a3b8; font-weight:600; border-bottom:1px solid var(--border); }
+    .cmp-table td { padding:6px 8px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+    .cmp-table tr:last-child td { border-bottom:none; }
+    .cmp-sprint-badge { background:#eff6ff; color:#1d4ed8; border-radius:8px; padding:0 7px; font-size:10.5px; font-weight:700; white-space:nowrap; }
+    .cmp-late { background:#fef2f2; color:#b91c1c; border-radius:8px; padding:0 7px; font-weight:700; font-size:11px; white-space:nowrap; }
+
     /* ─── Panel detalle por estado ─── */
     .status-panel { background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
     .status-panel-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
@@ -1306,6 +1324,9 @@
     <div id="carryover-list"></div>
   </div>
 
+  <!-- Vista Compromisos (pestaña fija) -->
+  <div id="compromisos-view" style="display:none"></div>
+
   <!-- Detalle por estado -->
   <div class="status-panel" id="status-panel">
     <div class="status-panel-head">
@@ -1328,7 +1349,7 @@
   </div>
 
   <!-- Fila 2: vista -->
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+  <div id="view-toggle-row" style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
     <button class="btn-view" id="btn-view-cards" title="Vista tarjetas">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
       Tarjetas
@@ -1416,14 +1437,26 @@ let activeStatusLabel = null;   // filtro por estado individual (panel Detalle p
 let searchQuery   = '';
 let reportDate    = null;   // Fecha Reporte del último CSV importado
 const LS_KEY      = 'sdm_sheets_url';
+// Migración: purgar URLs guardadas que apunten al archivo viejo (xlsx, ya sin publicación válida)
+(function purgeOldUrls(){
+  const OLD_CODE = '2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA';
+  ['sdm_sheets_url','sdm_config_url','sdm_help_url'].forEach(function(k){
+    const v = localStorage.getItem(k);
+    if (v && v.indexOf(OLD_CODE) !== -1) localStorage.removeItem(k);
+  });
+})();
   const LS_FLUJO_IMG = 'sdm_flujo_img';
   const DEFAULT_FLUJO_IMG = 'https://raw.githubusercontent.com/ut-comparederas-2025/sdm-sprints/main/Flujo.jpg';
 
 // ── URLs por defecto (hardcodeadas) ──────────────────────────────────────────
 // Si no hay URL guardada en localStorage, se usan estas automáticamente.
 // Para cambiar la fuente de datos, usa el ícono ⚙️ en el dashboard.
-const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?output=csv';
-const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=2142401314&single=true&output=csv';
+const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=1877682083&single=true&output=csv';  // Avance Sprint
+const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=2142401314&single=true&output=csv';  // Hoja2 (config sprints)
+const DEFAULT_COMPROMISOS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=189486830&single=true&output=csv';  // Tabla Implementación
+const COMPROMISOS_TAB = '__COMPROMISOS__';
+let compromisosData = undefined;   // undefined = cargando, null = error, [] = sin filas
+let cmpGruposCache = null;
 
 // ══════════════════════════════════════════════
 //  HELPERS
@@ -1566,11 +1599,17 @@ function parseRow(rowObj) {
   const dueDate    = formatDate(dueRaw);
   const fechaRep   = get('Fecha Reporte');
   // Producción: columna "En producción?" = Sí/Yes, o estado es Despliegue/Piloto/Finalizado
-  const prodRaw = get('En producción?').toLowerCase();
-  const prodByCol = ['sí','si','yes','true','1'].includes(prodRaw);
+  // Producción (en orden de prioridad):
+  //  1) Columna "En producción?" (archivos antiguos: Si/No)
+  //  2) Columna "Entorno" (archivo nuevo: "Amb Productivo" / "Amb Pruebas")
+  //  3) Fallback por estado
   const PROD_STATUSES = ['Despliegue Piloto','Piloto Aprobado','Finalizado','Finalizado (Hotfix)','Completado','Done','Done - Hotfix'];
-  const prodByStatus = PROD_STATUSES.includes(status.label) ||
-                       PROD_STATUSES.includes(get('Status').trim());
+  const prodRaw    = get('En producción?').trim().toLowerCase();
+  const entornoRaw = (get('Entorno') || get('Ambiente') || '').trim().toLowerCase();
+  let enProduccion;
+  if (prodRaw)         enProduccion = ['sí','si','yes','true','1'].includes(prodRaw);
+  else if (entornoRaw) enProduccion = entornoRaw.includes('productivo');
+  else enProduccion = PROD_STATUSES.includes(status.label) || PROD_STATUSES.includes(get('Status').trim());
   return {
     id:          get('Propiedad'),
     name:        get('Descripción'),
@@ -1583,7 +1622,9 @@ function parseRow(rowObj) {
     overdue:     isOverdue(dueDate),
     lastEdit:    get('Last edited time'),
     fechaReporte: fechaRep,
-    enProduccion: prodByCol || prodByStatus,
+    enProduccion,
+    entorno: get('Entorno'),
+    fase:    get('Fase'),
   };
 }
 
@@ -1598,12 +1639,15 @@ function renderSprints() {
   const hasPending = s => allTasks.filter(t => t.sprint === s).some(t => t.status.cat !== 'COMPLETADO');
   const currentSprint = [...sprints].reverse().find(hasPending) || sprints[sprints.length - 1];
 
-  if (!activeSprint || !sprints.includes(activeSprint)) {
+  if (!activeSprint || (activeSprint !== COMPROMISOS_TAB && !sprints.includes(activeSprint))) {
     activeSprint = currentSprint || sprints[0];
   }
 
   const nav = document.getElementById('sprint-nav');
-  nav.innerHTML = sprints.map(s => `
+  nav.innerHTML = `
+    <button class="sprint-tab fixed-compromisos ${activeSprint === COMPROMISOS_TAB ? 'active' : ''}"
+            data-sprint="${COMPROMISOS_TAB}">📋 Compromisos</button>
+  ` + sprints.map(s => `
     <button class="sprint-tab ${s === activeSprint ? 'active' : ''} ${s === currentSprint ? 'current' : ''}"
             data-sprint="${s}">${s}</button>
   `).join('');
@@ -1613,13 +1657,205 @@ function renderSprints() {
       activeSprint = btn.dataset.sprint;
       activeStatusLabel = null;
       renderSprints();
-      renderStats();
-      updateSprintInfoBar();
-      renderCarryOver();
-      renderCards();
-      renderCharts();
+      toggleMainSections();
+      if (isCompromisosView()) {
+        renderCompromisos();
+      } else {
+        renderStats();
+        updateSprintInfoBar();
+        renderCarryOver();
+        renderCards();
+        renderCharts();
+      }
     });
   });
+}
+
+// ══════════════════════════════════════════════
+//  COMPROMISOS (pestaña fija)
+// ══════════════════════════════════════════════
+function isCompromisosView() { return activeSprint === COMPROMISOS_TAB; }
+
+function toggleMainSections() {
+  const hide = isCompromisosView();
+  ['sprint-info-bar','charts-section','carryover-section','status-panel','filter-bar','view-toggle-row','task-view'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = hide ? 'none' : '';
+  });
+  const stats = document.querySelector('.stats-grid');
+  if (stats) stats.style.display = hide ? 'none' : '';
+  const cv = document.getElementById('compromisos-view');
+  if (cv) cv.style.display = hide ? 'block' : 'none';
+}
+
+function parseFechaCompromiso(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  if (!s || /^n\.?a\.?$/i.test(s) || /por definir/i.test(s)) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (m) {
+    let y = +m[3]; if (y < 100) y += 2000;
+    return new Date(y, +m[2]-1, +m[1]);   // día/mes/año
+  }
+  return null;
+}
+
+function parseCompromisos(csvText) {
+  let seen = {};
+  const res = Papa.parse(csvText, {
+    header: true, skipEmptyLines: true,
+    transformHeader: (h, i) => {
+      if (i === 0) seen = {};                  // PapaParse puede hacer varias pasadas: reiniciar por pasada
+      h = (h || '').replace(/^\uFEFF/, '').trim();
+      if (seen[h]) { seen[h]++; return h + '__' + seen[h]; }
+      seen[h] = 1; return h;
+    },
+  });
+  let lastAspecto = '';
+  const list = [];
+  (res.data || []).forEach(row => {
+    const crit = (row['CRITERIO'] || '').trim();
+    if (!crit) return;
+    const aspecto = ((row['ASPECTO__2'] || '') + '').replace(/\s*\n\s*/g, ' · ').trim();
+    if (aspecto) lastAspecto = aspecto;
+    let fechaRaw = '';
+    for (const k in row) { if (/^FECHA ENTREGA/i.test(k)) { fechaRaw = (row[k] || '').trim(); break; } }
+    list.push({
+      criterio: crit,
+      aspecto: lastAspecto,
+      idRaw: (row['Propiedad'] || '').trim(),
+      estadoActual: (row['ESTADO ACTUAL'] || '').trim().toUpperCase(),
+      fechaRaw,
+      fecha: parseFechaCompromiso(fechaRaw),
+    });
+  });
+  return list;
+}
+
+function renderCompromisos() {
+  const view = document.getElementById('compromisos-view');
+  if (!view) return;
+  if (compromisosData === undefined) {
+    view.innerHTML = '<div class="cmp-group" style="text-align:center;color:#94a3b8;padding:30px">Cargando compromisos…</div>';
+    return;
+  }
+  if (!compromisosData || !compromisosData.length) {
+    view.innerHTML = '<div class="cmp-group" style="text-align:center;color:#94a3b8;padding:30px">No se pudo cargar la lista de compromisos (pestaña "Tabla Implementación" del Sheet).</div>';
+    return;
+  }
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const MS = 86400000;
+  const byId = {};
+  allTasks.forEach(t => { if (t.id) { const k = String(t.id).trim(); (byId[k] = byId[k] || []).push(t); } });
+
+  const grupos = { VENCIDO: [], PROGRESO: [], INICIAR: [], CUMPLIDO: [], PREVIO: [] };
+  let retrasoProg = 0;
+
+  compromisosData.forEach(c => {
+    const id = c.idRaw.replace(/\.0$/, '');
+    const esCero = /^0+$/.test(id);
+    const tasks = (!esCero && id) ? (byId[id] || []) : [];
+    let latest = null;
+    if (tasks.length) {
+      latest = tasks.reduce((a, b) => {
+        const fa = parseFechaReporte(a.fechaReporte) || 0, fb = parseFechaReporte(b.fechaReporte) || 0;
+        return fb > fa ? b : a;
+      });
+    }
+    const sprints = [...new Set(tasks.map(t => t.sprint).filter(Boolean))].sort((a,b) => sprintNumber(a) - sprintNumber(b));
+    const vencidaDias = c.fecha && c.fecha < hoy ? Math.round((hoy - c.fecha) / MS) : 0;
+    const porVencer = c.fecha && c.fecha >= hoy ? Math.round((c.fecha - hoy) / MS) : null;
+    const item = Object.assign({}, c, { id, tasks, latest, sprints, vencidaDias, porVencer });
+
+    if (esCero || (c.estadoActual === 'CUMPLE' && !tasks.length)) grupos.PREVIO.push(item);
+    else if (latest && latest.enProduccion) grupos.CUMPLIDO.push(item);
+    else if (tasks.length) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
+    else if (vencidaDias > 0) grupos.VENCIDO.push(item);
+    else grupos.INICIAR.push(item);
+  });
+
+  const byFecha = (a, b) => (a.fecha ? a.fecha.getTime() : Infinity) - (b.fecha ? b.fecha.getTime() : Infinity);
+  Object.values(grupos).forEach(g => g.sort(byFecha));
+  cmpGruposCache = grupos;
+
+  const total = compromisosData.length;
+  const kpi = (lbl, val, color, sub) => `<div class="cmp-kpi"><div class="lbl"${color ? ` style="color:${color}"` : ''}>${lbl}</div><div class="val"${color ? ` style="color:${color}"` : ''}>${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
+
+  const fila = (it, grupo) => {
+    const sprintBadges = it.sprints.map(s => ` <span class="cmp-sprint-badge">${escHtml(s)}</span>`).join('');
+    let estadoHtml;
+    if (grupo === 'PREVIO') estadoHtml = '<span class="tbl-status-badge" style="background:#e1f5ee;color:#085041">✔ Cumplido previo</span>';
+    else if (it.latest) { const s = it.latest.status; estadoHtml = `<span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span>`; }
+    else estadoHtml = '<span class="tbl-status-badge" style="background:#f1f5f9;color:#64748b">Sin iniciar</span>';
+    const prod = it.latest && /productivo/i.test(it.latest.entorno || '');
+    const entorno = it.latest && it.latest.entorno
+      ? `<span class="tbl-status-badge" style="background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}">${escHtml(it.latest.entorno)}</span>`
+      : '<span style="color:#cbd5e1">—</span>';
+    let fechaHtml = it.fecha ? fmtF(it.fecha) : (it.fechaRaw && !/^n\.?a/i.test(it.fechaRaw) ? escHtml(it.fechaRaw) : '<span style="color:#cbd5e1">—</span>');
+    if (grupo === 'VENCIDO' || grupo === 'PROGRESO' || grupo === 'INICIAR') {
+      if (it.vencidaDias > 0) fechaHtml += ` <span class="cmp-late">${it.vencidaDias} día${it.vencidaDias === 1 ? '' : 's'} de retraso</span>`;
+      else if (it.porVencer !== null) fechaHtml += ` <span style="color:#b45309;font-weight:600;font-size:11px">en ${it.porVencer} día${it.porVencer === 1 ? '' : 's'}</span>`;
+    }
+    if (grupo === 'CUMPLIDO' && it.fecha) fechaHtml += ' <span style="color:#15803d">✓</span>';
+    return `<tr>
+      <td style="color:#94a3b8;font-size:11px;white-space:nowrap;width:44px">${escHtml(it.id) || '—'}</td>
+      <td><div style="font-weight:600">${escHtml(it.criterio)}${sprintBadges}</div><div style="font-size:11px;color:#94a3b8">${escHtml(it.aspecto)}</div></td>
+      <td style="width:150px">${estadoHtml}</td>
+      <td style="width:120px">${entorno}</td>
+      <td style="font-size:11.5px;white-space:nowrap;width:150px">${fechaHtml}</td>
+    </tr>`;
+  };
+
+  const grupoCard = (key, titulo, bg, color, extra) => {
+    const g = grupos[key];
+    if (!g.length) return '';
+    return `<div class="cmp-group">
+      <div class="cmp-group-head" style="background:${bg};color:${color}">${titulo} · ${g.length}${extra ? ' — ' + extra : ''}</div>
+      <table class="cmp-table">
+        <thead><tr><th>#</th><th>Compromiso</th><th>Estado</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
+        <tbody>${g.map(it => fila(it, key)).join('')}</tbody>
+      </table>
+    </div>`;
+  };
+
+  view.innerHTML = `
+    <div class="cmp-summary">
+      ${kpi('Total', total)}
+      ${kpi('Vencidos sin avance', grupos.VENCIDO.length, '#b91c1c')}
+      ${kpi('En progreso', grupos.PROGRESO.length, '#1d4ed8', retrasoProg ? `<span style="color:#b91c1c;font-weight:700">${retrasoProg} con retraso</span>` : '')}
+      ${kpi('Por iniciar', grupos.INICIAR.length, '#64748b')}
+      ${kpi('Cumplidos en sprints', grupos.CUMPLIDO.length, '#15803d')}
+      ${kpi('Cumplidos previos', grupos.PREVIO.length, '#047857')}
+    </div>
+    ${grupoCard('VENCIDO', '⚠️ Vencidos sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin tarea')}
+    ${grupoCard('PROGRESO', '🔵 En progreso', '#eff6ff', '#1d4ed8', 'en trabajo dentro de los sprints')}
+    ${grupoCard('INICIAR', '⚪ Por iniciar', '#f1f5f9', '#475569', 'sin tarea aún')}
+    ${grupoCard('CUMPLIDO', '✅ Cumplidos en sprints', '#ecfdf5', '#047857', 'trabajados y entregados')}
+    ${grupoCard('PREVIO', '✔️ Cumplidos previos (000)', '#e1f5ee', '#065f46', 'no requirieron trabajo')}
+  `;
+}
+
+function exportCompromisosExcel() {
+  if (!cmpGruposCache) { toast('⚠️ No hay compromisos cargados'); return; }
+  const NOM = { VENCIDO:'Vencido sin avance', PROGRESO:'En progreso', INICIAR:'Por iniciar', CUMPLIDO:'Cumplido en sprints', PREVIO:'Cumplido previo' };
+  const rows = [['#ID','Compromiso','Aspecto','Grupo','Sprint(s)','Estado','Entorno','Fecha entrega QA','Días de retraso']];
+  Object.keys(cmpGruposCache).forEach(k => cmpGruposCache[k].forEach(it => rows.push([
+    it.id || '', it.criterio, it.aspecto, NOM[k], it.sprints.join(', '),
+    it.latest ? it.latest.status.label : (k === 'PREVIO' ? 'Cumplido previo' : 'Sin iniciar'),
+    it.latest ? (it.latest.entorno || '') : '',
+    it.fechaRaw || '',
+    (k !== 'PREVIO' && k !== 'CUMPLIDO' && it.vencidaDias > 0) ? it.vencidaDias : ''
+  ])));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [8,50,26,18,14,20,16,16,12].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Compromisos');
+  const filename = `SDM_Compromisos_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  toast('✅ Exportado como ' + filename);
 }
 
 function getFilteredTasks() {
@@ -1852,6 +2088,7 @@ function renderList() {
 
 // ─── EXPORT TO EXCEL ───
 function exportToExcel() {
+  if (isCompromisosView()) { exportCompromisosExcel(); return; }
   const tasks = getFilteredTasks();
   if (!tasks.length) { toast('⚠️ No hay tareas para exportar'); return; }
 
@@ -2179,11 +2416,16 @@ function updateSprintInfoBar() {
 
 function renderAll() {
   renderSprints();
-  renderStats();
-  updateSprintInfoBar();
-  renderCarryOver();
-  renderCards();
-  renderCharts();
+  toggleMainSections();
+  if (isCompromisosView()) {
+    renderCompromisos();
+  } else {
+    renderStats();
+    updateSprintInfoBar();
+    renderCarryOver();
+    renderCards();
+    renderCharts();
+  }
   updateTimestamp();
 }
 
@@ -2191,10 +2433,17 @@ function renderAll() {
 //  DATA LOADING
 // ══════════════════════════════════════════════
 function processCSV(csvText) {
+  let seenHeaders = {};
   const result = Papa.parse(csvText, {
     header: true,           // PapaParse genera objetos {col: valor} — maneja comas en campos automáticamente
     skipEmptyLines: true,
-    transformHeader: h => (h || '').replace(/^﻿/, '').trim(),  // limpia BOM y espacios
+    transformHeader: (h, i) => {
+      if (i === 0) seenHeaders = {};           // PapaParse puede hacer varias pasadas: reiniciar por pasada
+      h = (h || '').replace(/^﻿/, '').trim();  // limpia BOM y espacios
+      if (seenHeaders[h]) { seenHeaders[h]++; return h + '__' + seenHeaders[h]; }  // duplicados: la 1ª gana
+      seenHeaders[h] = 1;
+      return h;
+    },
   });
   const rows = result.data;
   if (!rows || rows.length < 1) throw new Error('CSV vacío o inválido');
@@ -2362,6 +2611,9 @@ async function loadData(url){
   if(onDashboard)showLoading(true);
   try{
     await loadSprintConfig(localStorage.getItem(LS_CFG_URL)||DEFAULT_CONFIG_URL);
+    try {
+      compromisosData = parseCompromisos(await fetchCSV(DEFAULT_COMPROMISOS_URL));
+    } catch(eC) { compromisosData = null; }
     processCSV(await fetchCSV(url));
   }catch(e){
     const errEl=document.getElementById('setup-error');
@@ -2612,7 +2864,7 @@ function closeHelpPanel() {
 async function loadHelpData() {
   var body = document.getElementById('help-body');
   body.innerHTML = '<div class="help-loading"><div class="help-spinner"></div><div>Cargando guía…</div></div>';
-  var DEFAULT_HELP_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=1217048699&single=true&output=csv';
+  var DEFAULT_HELP_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=1217048699&single=true&output=csv';  // AYUDA_DASHBOARD
   var helpUrl = localStorage.getItem(LS_HELP_URL) || DEFAULT_HELP_URL;
   if (!helpUrl) {
     body.innerHTML = '<div class="help-loading">⚙️ URL de ayuda no configurada.<br><small>Agrégala en <strong>Configurar → URL hoja Ayuda</strong>.</small></div>';
