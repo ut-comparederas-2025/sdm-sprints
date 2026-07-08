@@ -1416,14 +1416,22 @@ let activeStatusLabel = null;   // filtro por estado individual (panel Detalle p
 let searchQuery   = '';
 let reportDate    = null;   // Fecha Reporte del último CSV importado
 const LS_KEY      = 'sdm_sheets_url';
+// Migración: purgar URLs guardadas que apunten al archivo viejo (xlsx, ya sin publicación válida)
+(function purgeOldUrls(){
+  const OLD_CODE = '2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA';
+  ['sdm_sheets_url','sdm_config_url','sdm_help_url'].forEach(function(k){
+    const v = localStorage.getItem(k);
+    if (v && v.indexOf(OLD_CODE) !== -1) localStorage.removeItem(k);
+  });
+})();
   const LS_FLUJO_IMG = 'sdm_flujo_img';
   const DEFAULT_FLUJO_IMG = 'https://raw.githubusercontent.com/ut-comparederas-2025/sdm-sprints/main/Flujo.jpg';
 
 // ── URLs por defecto (hardcodeadas) ──────────────────────────────────────────
 // Si no hay URL guardada en localStorage, se usan estas automáticamente.
 // Para cambiar la fuente de datos, usa el ícono ⚙️ en el dashboard.
-const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?output=csv';
-const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=2142401314&single=true&output=csv';
+const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=1877682083&single=true&output=csv';  // Avance Sprint
+const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=2142401314&single=true&output=csv';  // Hoja2 (config sprints)
 
 // ══════════════════════════════════════════════
 //  HELPERS
@@ -2626,7 +2634,7 @@ function closeHelpPanel() {
 async function loadHelpData() {
   var body = document.getElementById('help-body');
   body.innerHTML = '<div class="help-loading"><div class="help-spinner"></div><div>Cargando guía…</div></div>';
-  var DEFAULT_HELP_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOThbpjaQXcDB1pcsHjZX09XZXnqkCj-h0AV5nh9tevyVMWK8B1BJzYmF5cZWJYA/pub?gid=1217048699&single=true&output=csv';
+  var DEFAULT_HELP_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=1217048699&single=true&output=csv';  // AYUDA_DASHBOARD
   var helpUrl = localStorage.getItem(LS_HELP_URL) || DEFAULT_HELP_URL;
   if (!helpUrl) {
     body.innerHTML = '<div class="help-loading">⚙️ URL de ayuda no configurada.<br><small>Agrégala en <strong>Configurar → URL hoja Ayuda</strong>.</small></div>';
