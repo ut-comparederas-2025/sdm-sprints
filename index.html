@@ -1629,20 +1629,26 @@ function parseRow(rowObj) {
   const sprintRaw = get('Sprint SDM').trim();
   const esAvanceCompromiso = /^(c|compromisos?|sprint\s*c)$/i.test(sprintRaw);
   const sprint = esAvanceCompromiso ? null : (normalizeSprintName(sprintRaw) || null);
-  // Sprint destino: sprint en el que se planea/desarrolla la tarea. Para filas "C"
-  // se busca en las demás columnas tipo sprint (duplicadas "Sprint SDM__2", "Sprint").
-  let sprintDestino = sprint;
-  if (!sprintDestino) {
-    for (let i = 0; i < keys.length; i++) {
-      const kn = keysNorm[i];
-      if (kn === 'sprint sdm' || kn === 'sprint') {
-        const v = (rowObj[keys[i]] || '').trim();
-        let m = v.match(/sprint\s*0*(\d{1,2})\b/i);
-        if (!m && /^\d{1,2}$/.test(v)) m = [null, v];
-        if (m) { sprintDestino = 'Sprint ' + parseInt(m[1], 10); break; }
-      }
+  // Sprint(s) destino: en qué sprint(s) se planea/desarrolla la tarea.
+  // "SPRINT 3, SPRINT 4" = se planeó en el 3 y pasó al 4 (mismo comportamiento
+  // que las tareas de sprint). Se leen TODOS los valores de las columnas tipo
+  // sprint (incluidas duplicadas "Sprint SDM__2" y "Sprint").
+  const sprintsDestino = [];
+  const addDestino = nom => { if (nom && !sprintsDestino.includes(nom)) sprintsDestino.push(nom); };
+  if (sprint) addDestino(sprint);
+  for (let i = 0; i < keys.length; i++) {
+    const kn = keysNorm[i];
+    if (kn === 'sprint sdm' || kn === 'sprint') {
+      const v = (rowObj[keys[i]] || '').trim();
+      const re = /sprint\s*0*(\d{1,2})\b/gi;
+      let m;
+      while ((m = re.exec(v)) !== null) addDestino('Sprint ' + parseInt(m[1], 10));
+      if (!/sprint/i.test(v) && /^\d{1,2}$/.test(v)) addDestino('Sprint ' + parseInt(v, 10));
     }
   }
+  sprintsDestino.sort((a, b) => (+a.match(/\d+/)[0]) - (+b.match(/\d+/)[0]));
+  // Sprint "actual" de la tarea = el último al que pasó
+  const sprintDestino = sprintsDestino.length ? sprintsDestino[sprintsDestino.length - 1] : null;
   const status     = getStatus(get('Status'));
   const projects   = parseProjects(get('Proyecto'));
   const priority   = parsePriority(get('Priority'));
@@ -1681,6 +1687,7 @@ function parseRow(rowObj) {
     fase:    get('Fase'),
     esCompromiso: esAvanceCompromiso,
     sprintDestino,
+    sprintsDestino,
   };
 }
 
@@ -1855,9 +1862,11 @@ function renderCompromisos() {
         return fb > fa ? b : a;
       });
     }
-    // Sprints donde se trabaja o planea (incluye el sprint destino de los reportes "C")
-    const sprints = [...new Set(tasks.map(t => t.sprint || t.sprintDestino).filter(Boolean))]
-      .sort((a,b) => sprintNumber(a) - sprintNumber(b));
+    // Sprints donde se trabaja o planea (incluye TODOS los sprints destino de los
+    // reportes "C": "SPRINT 3, SPRINT 4" cuenta en ambos, igual que el carry-over)
+    const sprints = [...new Set(tasks.flatMap(t =>
+      (t.sprintsDestino && t.sprintsDestino.length) ? t.sprintsDestino : (t.sprint ? [t.sprint] : [])
+    ))].sort((a,b) => sprintNumber(a) - sprintNumber(b));
     const vencidaDias = c.fecha && c.fecha < hoy ? Math.round((hoy - c.fecha) / MS) : 0;
     const porVencer = c.fecha && c.fecha >= hoy ? Math.round((c.fecha - hoy) / MS) : null;
     const item = Object.assign({}, c, { id, tasks, latest, sprints, vencidaDias, porVencer });
@@ -2087,7 +2096,7 @@ function renderSprintCompromisos() {
   // o con "C" cuyo sprint destino es este sprint (programadas).
   const byIdSprint = {};
   allTasks.forEach(t => {
-    if (t.id && (t.sprint === activeSprint || (t.esCompromiso && t.sprintDestino === activeSprint))) {
+    if (t.id && (t.sprint === activeSprint || (t.esCompromiso && (t.sprintsDestino || []).includes(activeSprint)))) {
       const k = matchId(t.id);
       (byIdSprint[k] = byIdSprint[k] || []).push(t);
     }
