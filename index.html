@@ -2103,16 +2103,22 @@ function renderSprintCompromisos() {
     }
   });
 
-  const items = [];
+  // Una fila por TAREA (Propiedad única): si una misma Propiedad cubre varios
+  // compromisos de la tabla, se agrupan en la misma fila. Así el conteo coincide
+  // con filtrar C + sprint en el Sheet.
+  const porTarea = new Map();
   compromisosData.forEach(c => {
     const id = normId(c.idRaw);
     if (!id || /^0+$/.test(id) || /no\s*aplica/i.test(c.idRaw)) return;
-    const ts = byIdSprint[matchId(c.idRaw)];
+    const key = matchId(c.idRaw);
+    const ts = byIdSprint[key];
     if (!ts || !ts.length) return;
+    if (porTarea.has(key)) { porTarea.get(key).criterios.push(c.criterio); return; }
     const latest = ts.reduce((a, b) =>
       ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
-    items.push({ c, id, latest });
+    porTarea.set(key, { c, id, latest, criterios: [c.criterio] });
   });
+  const items = [...porTarea.values()];
 
   if (!items.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
@@ -2132,7 +2138,8 @@ function renderSprintCompromisos() {
       const prod = /productivo/i.test(x.latest.entorno || '');
       return `<tr>
         <td style="color:#94a3b8;font-size:11px">#${escHtml(x.id)}</td>
-        <td style="font-weight:600">${escHtml(x.c.criterio)}<div style="font-weight:400;font-size:11px;color:#94a3b8">${escHtml(x.c.aspecto)}</div></td>
+        <td style="font-weight:600">${x.criterios.map(cr => escHtml(cr)).join('<div style="height:3px"></div>')}
+          <div style="font-weight:400;font-size:11px;color:#94a3b8">${escHtml(x.c.aspecto)}${x.criterios.length > 1 ? ` · cubre ${x.criterios.length} compromisos` : ''}</div></td>
         <td>${progBadge(s)}</td>
         <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
         <td>${x.latest.entorno ? `<span class=\"tbl-status-badge\" style=\"background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}\">${escHtml(x.latest.entorno)}</span>` : '—'}</td>
@@ -2996,7 +3003,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-1';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-2';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
