@@ -2049,13 +2049,9 @@ function renderCompromisos() {
   view.innerHTML = avisoCruce + `
     <div class="cmp-summary">
       ${kpi('Total tabla', total)}
-      ${kpi('Con tarea', totConNumero, '#185fa5', 'estado según Avance Sprint')}
-      ${kpi('Vencidas sin avance', grupos.VENCIDO.length, '#b91c1c')}
       ${kpi('Sprint actual', grupos.PLANEADA.length, '#0e7490', sprintVigente ? 'planeadas en ' + escHtml(sprintVigente) : '')}
-      ${kpi('Por asignar', grupos.PORASIGNAR.length, '#5f5e5a', 'número pendiente')}
       ${kpi('No aplica', grupos.NOAPLICA.length, '#5f5e5a')}
       ${kpi('Cumplidas previas', grupos.PREVIO.length, '#047857', 'marcadas 000')}
-      ${kpi('Adicionales', grupos.ADICIONAL.length, '#6d28d9', 'con C, fuera de tabla')}
     </div>
     ${panelHtml}
     ${chartsHtml}
