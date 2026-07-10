@@ -2118,7 +2118,19 @@ function renderSprintCompromisos() {
       ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
     porTarea.set(key, { c, id, latest, criterios: [c.criterio] });
   });
-  const items = [...porTarea.values()];
+  // Tareas "C" de este sprint cuya Propiedad NO está en la Tabla Implementación:
+  // se listan como adicionales para que el total coincida con el filtro del Sheet.
+  Object.keys(byIdSprint).forEach(key => {
+    if (porTarea.has(key)) return;
+    const ts = byIdSprint[key];
+    const latest = ts.reduce((a, b) =>
+      ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
+    porTarea.set(key, {
+      c: { aspecto: 'Adicional · no está en la Tabla Implementación', fecha: null, fechaRaw: '' },
+      id: key, latest, criterios: [latest.name || ('Tarea ' + key)],
+    });
+  });
+  const items = [...porTarea.values()].sort((a, b) => (+a.id || 0) - (+b.id || 0));
 
   if (!items.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
@@ -2138,7 +2150,7 @@ function renderSprintCompromisos() {
       const prod = /productivo/i.test(x.latest.entorno || '');
       return `<tr>
         <td style="color:#94a3b8;font-size:11px">#${escHtml(x.id)}</td>
-        <td style="font-weight:600">${x.criterios.map(cr => escHtml(cr)).join('<div style="height:3px"></div>')}
+        <td style="font-weight:600">${[...new Set(x.criterios)].map(cr => escHtml(cr)).join('<div style="height:3px"></div>')}
           <div style="font-weight:400;font-size:11px;color:#94a3b8">${escHtml(x.c.aspecto)}${x.criterios.length > 1 ? ` · cubre ${x.criterios.length} compromisos` : ''}</div></td>
         <td>${progBadge(s)}</td>
         <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
@@ -3003,7 +3015,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-2';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-3';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
