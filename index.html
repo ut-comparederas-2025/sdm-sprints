@@ -1134,7 +1134,7 @@
       <div class="landing-info-card">
         <div class="landing-info-label">Corte</div>
         <div class="landing-info-val" id="land-corte" style="font-size:15px">—</div>
-        <div class="landing-info-sub">fecha de actualización</div>
+        <div class="landing-info-sub" id="land-corte-sub">fecha de actualización</div>
       </div>
       <div class="landing-info-card">
         <div class="landing-info-label">Días hábiles transcurridos</div>
@@ -1366,7 +1366,7 @@
   <!-- Compromisos trabajados en el sprint activo -->
   <div class="carryover-section" id="sprint-compromisos-section" style="display:none;margin-top:32px">
     <div class="carryover-header">
-      <div class="carryover-title" id="sprint-compromisos-title">🚀 Compromisos trabajados en este sprint</div>
+      <div class="carryover-title" id="sprint-compromisos-title">🚀 Tareas Fase de implementación en este sprint</div>
       <span class="carryover-badge" id="sprint-compromisos-badge">0</span>
     </div>
     <div id="sprint-compromisos-list"></div>
@@ -1633,9 +1633,12 @@ function parseRow(rowObj) {
   if (prodRaw)         enProduccion = ['sí','si','yes','true','1'].includes(prodRaw);
   else if (entornoRaw) enProduccion = entornoRaw.includes('productivo');
   else enProduccion = PROD_STATUSES.includes(status.label) || PROD_STATUSES.includes(get('Status').trim());
+  const _id = normId(get('Propiedad'));
   return {
-    id:          normId(get('Propiedad')),
-    name:        get('Descripción'),
+    id:          _id,
+    // Si el reporte trae Propiedad pero no Descripción, no se descarta:
+    // se muestra como "Tarea <id>" y cruza en Fase de Implementación.
+    name:        get('Descripción') || (_id ? 'Tarea ' + _id : ''),
     sprint,
     status,
     projects,
@@ -1799,7 +1802,9 @@ function renderCompromisos() {
   compromisosData.forEach(c => {
     const id = normId(c.idRaw);
     const esCero = /^0+$/.test(id);
-    const tasks = (!esCero && id) ? (byId[id] || []) : [];
+    // Sin tarea asignada = Propiedad vacía o "No aplica"
+    const esNoAplica = /no\s*aplica/i.test(c.idRaw);
+    const tasks = (!esCero && !esNoAplica && id) ? (byId[id] || []) : [];
     let latest = null;
     if (tasks.length) {
       latest = tasks.reduce((a, b) => {
@@ -1814,9 +1819,13 @@ function renderCompromisos() {
 
     // Tiene avance = existe al menos un reporte en Avance Sprint (de cualquier
     // sprint o con "C") cuyo Status homologado NO sea "No iniciado" (Not started).
-    const hasAvance = !!latest && latest.status.label !== 'No iniciado';
+    const hasAvance = !!latest && latest.status.label !== 'No iniciado' && latest.status.label !== 'Sin estado';
+    // Cumplido = el último reporte está en categoría COMPLETADO (Terminado en QA,
+    // En Pruebas SDM, Aprobado por SDM, Despliegue Piloto, Piloto Aprobado,
+    // Finalizado, Archivado…), igual que en los sprints; o ya está en Productivo.
+    const esCumplido = !!latest && (latest.status.cat === 'COMPLETADO' || latest.enProduccion);
     if (esCero || (c.estadoActual === 'CUMPLE' && !tasks.length)) grupos.PREVIO.push(item);
-    else if (latest && latest.enProduccion) grupos.CUMPLIDO.push(item);
+    else if (esCumplido) grupos.CUMPLIDO.push(item);
     else if (hasAvance) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
     else if (vencidaDias > 0) grupos.VENCIDO.push(item);
     else grupos.INICIAR.push(item);
@@ -1939,7 +1948,7 @@ function renderSprintCompromisos() {
 
   if (!items.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
-  document.getElementById('sprint-compromisos-title').textContent = `🚀 Compromisos trabajados en ${activeSprint}`;
+  document.getElementById('sprint-compromisos-title').textContent = `🚀 Tareas Fase de implementación en ${activeSprint}`;
   document.getElementById('sprint-compromisos-badge').textContent = items.length;
   const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
   document.getElementById('sprint-compromisos-list').innerHTML = `<table class="carryover-table">
@@ -2570,10 +2579,9 @@ function processCSV(csvText) {
   if (!rows || rows.length < 1) throw new Error('CSV vacío o inválido');
   const parsed = rows
     .map(row => parseRow(row))
-    // Excluimos filas sin nombre, PERO conservamos avances de compromisos ("C")
-    // que traigan Propiedad aunque no tengan descripción, para que el cruce
-    // en Fase de Implementación no los pierda.
-    .filter(t => t.name || (t.esCompromiso && t.id));
+    // Se conserva toda fila con Descripción o con Propiedad (número de tarea):
+    // un reporte sin descripción pero con número SÍ es avance.
+    .filter(t => t.name || t.id);
 
   // ── Deduplicar POR (sprint, tarea): cada tarea puede aparecer en varios
   //    sprints (cuando pasa de un sprint al siguiente), y en cada sprint
@@ -2611,6 +2619,12 @@ function processCSV(csvText) {
 
   // Persistir corte para mostrarlo en la landing en futuras visitas
   if (reportDate) localStorage.setItem(LS_CORTE, reportDate);
+  // Hora de la última carga de datos (se muestra en la landing)
+  try {
+    localStorage.setItem(LS_LOAD_TIME,
+      new Date().toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: true }));
+  } catch(e) {}
+  updateLanding();
 
   // Detectar sprint actual y persistirlo
   const sprints = [...new Set(allTasks.map(t => t.sprint).filter(Boolean))]
@@ -2650,6 +2664,7 @@ function fetchCSV(url) {
 }
 
 const LS_CORTE      = 'sdm_last_corte';
+const LS_LOAD_TIME  = 'sdm_last_load_time';
 const LS_SPRINT_NOW = 'sdm_current_sprint';
 const LS_CFG_URL    = 'sdm_config_url';
 const LS_CFG_DATA   = 'sdm_sprint_cfg';
@@ -2755,6 +2770,9 @@ function updateLanding(){
   const ls=document.getElementById('land-sprint');
   if(lc&&corte)lc.textContent=corte;
   if(ls&&sprint)ls.textContent=sprint;
+  const hora=localStorage.getItem(LS_LOAD_TIME);
+  const lcSub=document.getElementById('land-corte-sub');
+  if(lcSub&&hora)lcSub.textContent='Cargado '+hora;
   const cfgRaw=localStorage.getItem(LS_CFG_DATA);
   if(!cfgRaw||!sprint)return;
   let cfg;try{cfg=JSON.parse(cfgRaw);}catch(e){return;}
