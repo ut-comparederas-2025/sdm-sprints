@@ -2024,47 +2024,26 @@ function renderCompromisos() {
     ${faseEstadoFiltro ? `<div class="status-filter-chip"><button id="fase-filter-clear">Filtro: ${escHtml(faseEstadoFiltro)} ✕</button></div>` : ''}
   </div>`;
 
-  // ── Gráficas ──
+  // ── Gráficas (Chart.js, mismo estilo del dashboard) ──
   const nPrev = grupos.PREVIO.length, nDone = grupos.CUMPLIDO.length, nProg = grupos.PROGRESO.length,
         nPlan = grupos.PLANEADA.length, nSin = grupos.VENCIDO.length + grupos.INICIAR.length,
         nOtros = grupos.PORASIGNAR.length + grupos.NOAPLICA.length;
   const pct = n => total ? Math.round(n * 100 / total) : 0;
   const cumplPct = pct(nPrev + nDone);
-  const seg = (n, color, lbl) => n ? `<div style="width:${Math.max(pct(n), 2)}%;background:${color}" title="${lbl}: ${n}"></div>` : '';
-  const chartGeneral = `<div class="cmp-group" style="margin-bottom:0">
-    <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.4px;margin-bottom:8px">AVANCE GENERAL DE LA TABLA</div>
-    <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;background:#f1f5f9">
-      ${seg(nPrev, '#0f6e56', 'Cumplidas previas')}${seg(nDone, '#5dcaa5', 'Cumplidas en sprints')}${seg(nProg, '#378add', 'En progreso')}${seg(nPlan, '#67e8f9', 'Planeadas sprint actual')}${seg(nSin, '#e24b4a', 'Sin avance')}${seg(nOtros, '#d3d1c7', 'Por asignar / No aplica')}
-    </div>
-    <div style="font-size:11.5px;color:#64748b;margin-top:6px;line-height:1.8">
-      <span style="color:#0f6e56">■</span> Previas ${nPrev} · <span style="color:#5dcaa5">■</span> Cumplidas ${nDone} · <span style="color:#378add">■</span> En progreso ${nProg} · <span style="color:#0e7490">■</span> Planeadas ${nPlan} · <span style="color:#e24b4a">■</span> Sin avance ${nSin} · <span style="color:#888780">■</span> Por asignar/No aplica ${nOtros}
-    </div>
-    <div style="font-size:13px;margin-top:6px">Cumplimiento: <strong style="color:#0f6e56">${nPrev + nDone} de ${total} (${cumplPct}%)</strong></div>
-  </div>`;
-
   const spKeys = Object.keys(porSprint).sort((a, b) => sprintNumber(a) - sprintNumber(b));
-  let chartSprints = '';
-  if (spKeys.length) {
-    const maxT = Math.max(...spKeys.map(s => porSprint[s].plan + porSprint[s].prog + porSprint[s].done)) || 1;
-    chartSprints = `<div class="cmp-group" style="margin-bottom:0">
-      <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.4px;margin-bottom:8px">TAREAS DE IMPLEMENTACIÓN POR SPRINT</div>
-      <div style="display:flex;align-items:flex-end;gap:22px;height:112px;padding:0 8px">` +
-      spKeys.map(s => {
-        const d = porSprint[s];
-        const h = v => Math.round(v * 88 / maxT);
-        return `<div style="flex:1;max-width:130px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;text-align:center">
-          <div style="font-size:11px;color:#334155;margin-bottom:2px">${d.done + d.prog + d.plan}</div>
-          ${d.plan ? `<div style="background:#b4b2a9;height:${h(d.plan)}px" title="Planeadas/sin iniciar: ${d.plan}"></div>` : ''}
-          ${d.prog ? `<div style="background:#378add;height:${h(d.prog)}px" title="En progreso: ${d.prog}"></div>` : ''}
-          ${d.done ? `<div style="background:#5dcaa5;height:${h(d.done)}px;border-radius:0 0 3px 3px" title="Cumplidas: ${d.done}"></div>` : ''}
-          <div style="font-size:11px;color:#64748b;margin-top:4px;white-space:nowrap">${escHtml(s)}${s === sprintVigente ? ' ●' : ''}</div>
-        </div>`;
-      }).join('') +
-      `</div>
-      <div style="font-size:11.5px;color:#64748b;margin-top:4px"><span style="color:#5dcaa5">■</span> Cumplidas · <span style="color:#378add">■</span> En progreso · <span style="color:#888780">■</span> Planeadas/sin iniciar</div>
-    </div>`;
-  }
-  const chartsHtml = `<div style="display:grid;grid-template-columns:${chartSprints ? '1fr 1fr' : '1fr'};gap:10px;margin-bottom:10px">${chartGeneral}${chartSprints}</div>`;
+  const chartsHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:16px">
+    <div class="chart-card">
+      <div class="chart-title">Avance general de la tabla · ${total} compromisos</div>
+      <div class="chart-wrap donut">
+        <canvas id="fase-chart-general"></canvas>
+        <div class="donut-center"><div class="donut-center-val">${cumplPct}%</div><div class="donut-center-lbl">cumplimiento</div></div>
+      </div>
+    </div>
+    ${spKeys.length ? `<div class="chart-card">
+      <div class="chart-title">Tareas de implementación por sprint</div>
+      <div class="chart-wrap bar"><canvas id="fase-chart-sprints"></canvas></div>
+    </div>` : ''}
+  </div>`;
 
   // ── Filas y tarjetas de grupo (con columna Sprint) ──
   const aplicaFiltro = it => !faseEstadoFiltro || (it.latest && it.latest.status.label === faseEstadoFiltro);
@@ -2124,9 +2103,9 @@ function renderCompromisos() {
   view.innerHTML = avisoCruce + `
     <div class="cmp-summary">
       ${kpi('Total tabla', total)}
-      ${kpi('Sprint actual', svTot, '#0e7490', sprintVigente ? `${escHtml(sprintVigente)}: ${svPlan} planeadas · ${svEjec} en ejecución · ${svEntr} entregadas` : '')}
-      ${kpi('No aplica', grupos.NOAPLICA.length, '#5f5e5a')}
-      ${kpi('Cumplidas previas', grupos.PREVIO.length, '#047857', 'marcadas 000')}
+      ${kpi('Sprint actual', svTot, '#0891b2', sprintVigente ? `${escHtml(sprintVigente)}: ${svPlan} planeadas · ${svEjec} en ejecución · ${svEntr} entregadas` : '')}
+      ${kpi('No aplica', grupos.NOAPLICA.length, '#6b7280')}
+      ${kpi('Cumplidas previas', grupos.PREVIO.length, '#16a34a', 'marcadas 000')}
     </div>
     ${panelHtml}
     ${chartsHtml}
@@ -2152,6 +2131,58 @@ function renderCompromisos() {
   });
   const fclear = view.querySelector('#fase-filter-clear');
   if (fclear) fclear.addEventListener('click', () => { faseEstadoFiltro = null; renderCompromisos(); });
+
+  // ── Instanciar gráficas (destruyendo las anteriores al re-renderizar) ──
+  if (window.faseChartRefs) window.faseChartRefs.forEach(ch => { try { ch.destroy(); } catch (e) {} });
+  window.faseChartRefs = [];
+  if (typeof Chart !== 'undefined') {
+    const DLf = (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [];
+    const dlf = { color:'#1e293b', backgroundColor:'rgba(255,255,255,.75)', borderRadius:4,
+      padding:{top:2,bottom:2,left:5,right:5}, font:{size:11,weight:'700'},
+      formatter: v => v > 0 ? v : '' };
+    const basef = { responsive:true, maintainAspectRatio:false };
+    const elG = document.getElementById('fase-chart-general');
+    if (elG) window.faseChartRefs.push(new Chart(elG, {
+      type: 'doughnut',
+      data: {
+        labels: ['Cumplidas previas','Cumplidas en sprints','En progreso','Planeadas sprint actual','Sin avance','Por asignar / No aplica'],
+        datasets: [{ data: [nPrev, nDone, nProg, nPlan, nSin, nOtros],
+          backgroundColor: ['#16a34a','#4ade80','#60a5fa','#22d3ee','#f87171','#cbd5e1'],
+          borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
+      },
+      plugins: DLf,
+      options: { ...basef, cutout:'68%',
+        plugins: {
+          legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
+          tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total ? Math.round(c.parsed/total*100) : 0}%)` } },
+          datalabels: dlf
+        }
+      }
+    }));
+    const elS = document.getElementById('fase-chart-sprints');
+    if (elS && spKeys.length) window.faseChartRefs.push(new Chart(elS, {
+      type: 'bar',
+      data: {
+        labels: spKeys.map(s => s === sprintVigente ? s + ' ●' : s),
+        datasets: [
+          { label:'Cumplidas',             data: spKeys.map(s => porSprint[s].done), backgroundColor:'#4ade80', stack:'s' },
+          { label:'En progreso',           data: spKeys.map(s => porSprint[s].prog), backgroundColor:'#60a5fa', stack:'s' },
+          { label:'Planeadas / sin iniciar', data: spKeys.map(s => porSprint[s].plan), backgroundColor:'#fbbf24', stack:'s' },
+        ]
+      },
+      plugins: DLf,
+      options: { ...basef,
+        plugins: {
+          legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
+          datalabels: dlf
+        },
+        scales: {
+          x: { stacked:true, grid:{ display:false }, ticks:{ font:{size:11} } },
+          y: { stacked:true, beginAtZero:true, ticks:{ precision:0, font:{size:11} } }
+        }
+      }
+    }));
+  }
 }
 
 function renderSprintCompromisos() {
@@ -3081,7 +3112,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-7';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-8';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
