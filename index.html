@@ -1566,6 +1566,16 @@ function parseFechaReporte(s) {
   return formatDate(s);
 }
 
+// Normaliza la Propiedad (ID) para que el cruce nunca falle:
+// quita espacios/NBSP, sufijos ".0"/",0" de exportación numérica y "#" inicial.
+function normId(v) {
+  return String(v == null ? '' : v)
+    .replace(/ /g, ' ')
+    .trim()
+    .replace(/^#/, '')
+    .replace(/[.,]0+$/, '');
+}
+
 function parseRow(rowObj) {
   // rowObj es un objeto {header: valor} generado por PapaParse con header:true
   // Búsqueda flexible: exacta → case-insensitive → alias
@@ -1624,7 +1634,7 @@ function parseRow(rowObj) {
   else if (entornoRaw) enProduccion = entornoRaw.includes('productivo');
   else enProduccion = PROD_STATUSES.includes(status.label) || PROD_STATUSES.includes(get('Status').trim());
   return {
-    id:          get('Propiedad'),
+    id:          normId(get('Propiedad')),
     name:        get('Descripción'),
     sprint,
     status,
@@ -1763,13 +1773,13 @@ function renderCompromisos() {
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const MS = 86400000;
   const byId = {};
-  allTasks.forEach(t => { if (t.id) { const k = String(t.id).trim(); (byId[k] = byId[k] || []).push(t); } });
+  allTasks.forEach(t => { if (t.id) { const k = normId(t.id); (byId[k] = byId[k] || []).push(t); } });
 
   const grupos = { VENCIDO: [], PROGRESO: [], INICIAR: [], CUMPLIDO: [], PREVIO: [] };
   let retrasoProg = 0;
 
   compromisosData.forEach(c => {
-    const id = c.idRaw.replace(/\.0$/, '');
+    const id = normId(c.idRaw);
     const esCero = /^0+$/.test(id);
     const tasks = (!esCero && id) ? (byId[id] || []) : [];
     let latest = null;
@@ -1795,11 +1805,11 @@ function renderCompromisos() {
   Object.values(grupos).forEach(g => g.sort(byFecha));
 
   // ➕ ADICIONALES: avances reportados con "C" cuya Propiedad NO está en la Tabla Implementación
-  const idsTabla = new Set(compromisosData.map(c => c.idRaw.replace(/\.0$/, '').trim()).filter(id => id && !/^0+$/.test(id)));
+  const idsTabla = new Set(compromisosData.map(c => normId(c.idRaw)).filter(id => id && !/^0+$/.test(id)));
   const adicionalesById = {};
   allTasks.forEach(t => {
     if (t.esCompromiso && t.id) {
-      const k = String(t.id).trim().replace(/\.0$/, '');
+      const k = normId(t.id);
       if (!k || /^0+$/.test(k) || idsTabla.has(k)) return;
       (adicionalesById[k] = adicionalesById[k] || []).push(t);
     }
@@ -1890,14 +1900,14 @@ function renderSprintCompromisos() {
   const byIdSprint = {};
   allTasks.forEach(t => {
     if (t.id && t.sprint === activeSprint) {
-      const k = String(t.id).trim();
+      const k = normId(t.id);
       (byIdSprint[k] = byIdSprint[k] || []).push(t);
     }
   });
 
   const items = [];
   compromisosData.forEach(c => {
-    const id = c.idRaw.replace(/\.0$/, '');
+    const id = normId(c.idRaw);
     if (!id || /^0+$/.test(id)) return;
     const ts = byIdSprint[id];
     if (!ts || !ts.length) return;
@@ -2539,7 +2549,10 @@ function processCSV(csvText) {
   if (!rows || rows.length < 1) throw new Error('CSV vacío o inválido');
   const parsed = rows
     .map(row => parseRow(row))
-    .filter(t => t.name);  // solo excluimos filas sin nombre
+    // Excluimos filas sin nombre, PERO conservamos avances de compromisos ("C")
+    // que traigan Propiedad aunque no tengan descripción, para que el cruce
+    // en Fase de Implementación no los pierda.
+    .filter(t => t.name || (t.esCompromiso && t.id));
 
   // ── Deduplicar POR (sprint, tarea): cada tarea puede aparecer en varios
   //    sprints (cuando pasa de un sprint al siguiente), y en cada sprint
