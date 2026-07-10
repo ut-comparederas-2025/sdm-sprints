@@ -2103,11 +2103,11 @@ function renderCompromisos() {
   view.innerHTML = avisoCruce + `
     <div class="cmp-summary">
       ${kpi('Total tabla', total, '#0f1e36', 'compromisos')}
+      ${kpi('Sprint actual', svTot, '#0891b2', sprintVigente ? `${escHtml(sprintVigente)}: ${svPlan} planeadas · ${svEjec} en ejecución · ${svEntr} entregadas` : '')}
       ${kpi('Cumplidas previas', grupos.PREVIO.length, '#15803d', 'marcadas 000')}
       ${kpi('Cumplidas en sprints', grupos.CUMPLIDO.length, '#16a34a', 'entregadas')}
       ${kpi('En progreso', grupos.PROGRESO.length, '#1a56db', 'con avance reportado')}
-      ${kpi('Planeadas Sprint actual', grupos.PLANEADA.length, '#0891b2', sprintVigente ? `${escHtml(sprintVigente)} tiene ${svTot} tareas: ${svPlan} plan · ${svEjec} ejec · ${svEntr} entreg` : '')}
-      ${kpi('Sin avance', grupos.VENCIDO.length + grupos.INICIAR.length, '#dc2626', `${grupos.VENCIDO.length} vencidas · ${grupos.INICIAR.length} por iniciar`)}
+      ${kpi('Sin iniciar', grupos.VENCIDO.length + grupos.INICIAR.length + grupos.PLANEADA.length, '#dc2626', `${grupos.VENCIDO.length} vencidas · ${grupos.INICIAR.length} en fecha · ${grupos.PLANEADA.length} planeadas ${sprintVigente ? escHtml(sprintVigente) : ''}`)}
       ${kpi('Por asignar', grupos.PORASIGNAR.length, '#6b7280', 'número pendiente')}
       ${kpi('No aplica', grupos.NOAPLICA.length, '#6b7280')}
     </div>
@@ -3123,7 +3123,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-10';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-11';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
