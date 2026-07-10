@@ -1953,6 +1953,44 @@ function renderCompromisos() {
   const kpi = (lbl, val, color, sub) => `<div class="cmp-kpi"><div class="lbl"${color ? ` style="color:${color}"` : ''}>${lbl}</div><div class="val"${color ? ` style="color:${color}"` : ''}>${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
 
+  // ── 🔄 Tareas que continúan de sprints anteriores → sprint vigente ──
+  const criterioByKey = {}, fechaByKey = {};
+  compromisosData.forEach(c => {
+    const k = matchId(c.idRaw);
+    if (k && !/^0+$/.test(normId(c.idRaw)) && !criterioByKey[k]) {
+      criterioByKey[k] = c.criterio;
+      fechaByKey[k] = c.fecha ? fmtF(c.fecha) : (c.fechaRaw && !/^n\.?a/i.test(c.fechaRaw) ? c.fechaRaw : '');
+    }
+  });
+  let continuanHtml = '';
+  if (sprintVigente) {
+    const continuan = Object.entries(tareasSV).map(([k, t]) => ({
+      k, t,
+      previos: (t.sprintsDestino || []).filter(s => sprintNumber(s) < sprintNumber(sprintVigente)),
+    })).filter(x => x.previos.length).sort((a, b) => (+a.k || 0) - (+b.k || 0));
+    if (continuan.length) {
+      const desde = [...new Set(continuan.flatMap(x => x.previos))]
+        .sort((a, b) => sprintNumber(a) - sprintNumber(b))
+        .map(s => s.replace(/sprint\s*/i, '')).join(',');
+      continuanHtml = `<div class="cmp-group" style="border-left:4px solid #f59e0b">
+        <div class="cmp-group-head" style="background:#fef3c7;color:#92400e">🔄 Tareas que continúan de Sprint ${desde} → ${escHtml(sprintVigente)} · ${continuan.length}</div>
+        <table class="cmp-table">
+          <thead><tr><th>#</th><th>Tarea / Compromiso</th><th>Viene de</th><th>Estado actual</th><th>Entrega QA</th></tr></thead>
+          <tbody>${continuan.map(x => {
+            const s = x.t.status;
+            return `<tr>
+              <td style="color:#94a3b8;font-size:11px">${escHtml(x.k)}</td>
+              <td style="font-weight:600">${escHtml(criterioByKey[x.k] || x.t.name || ('Tarea ' + x.k))}</td>
+              <td>${x.previos.map(sp => `<span class="cmp-sprint-badge" style="background:#fef3c7;color:#92400e">${escHtml(sp)}</span>`).join(' ')}</td>
+              <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
+              <td style="font-size:11.5px;white-space:nowrap">${fechaByKey[x.k] || '—'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+    }
+  }
+
   // ── Panel "Detalle por estado" (mismas categorías de los sprints) ──
   const panelHtml = `<div class="status-panel">
     <div class="status-panel-head">
@@ -2084,6 +2122,7 @@ function renderCompromisos() {
     </div>
     ${panelHtml}
     ${chartsHtml}
+    ${continuanHtml}
     ${grupoCard('VENCIDO', '⚠️ Vencidas sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin avance reportado')}
     ${grupoCard('PROGRESO', '🔵 En progreso', '#eff6ff', '#1d4ed8', 'con avance reportado en Avance Sprint')}
     ${grupoCard('PLANEADA', '🗓️ Sprint actual — planeadas', '#ecfeff', '#0e7490', sprintVigente ? 'asignadas a ' + escHtml(sprintVigente) + ', aún sin iniciar' : 'asignadas al sprint vigente, aún sin iniciar')}
@@ -3034,7 +3073,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-4';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-5';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
