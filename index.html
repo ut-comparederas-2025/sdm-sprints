@@ -1637,8 +1637,9 @@ function parseRow(rowObj) {
   const addDestino = nom => { if (nom && !sprintsDestino.includes(nom)) sprintsDestino.push(nom); };
   if (sprint) addDestino(sprint);
   for (let i = 0; i < keys.length; i++) {
-    const kn = keysNorm[i];
-    if (kn === 'sprint sdm' || kn === 'sprint') {
+    // SOLO las columnas "Sprint SDM" (incluidas duplicadas "Sprint SDM__2" = AE).
+    // La columna "Sprint" trae enlaces de otro sistema y NO se usa.
+    if (keysNorm[i] === 'sprint sdm') {
       const v = (rowObj[keys[i]] || '').trim();
       const re = /sprint\s*0*(\d{1,2})\b/gi;
       let m;
