@@ -2764,8 +2764,11 @@ function processCSV(csvText) {
   //    Resultado: Sprint 2 muestra sus 17 tareas aunque 5 hayan pasado al Sprint 3.
   const taskMap = new Map();
   parsed.forEach(task => {
-    if (!task.sprint) return;   // sin Sprint SDM → no aparece en ninguna pestaña
-    const key = task.sprint + '||' + (task.id || task.name);
+    // Filas "C" (avances de Fase de Implementación) NO crean pestaña ni entran
+    // a los KPIs de sprint, pero SÍ se conservan para el cruce por Propiedad.
+    // Solo se descartan filas sin sprint que tampoco son "C".
+    if (!task.sprint && !task.esCompromiso) return;
+    const key = (task.sprint || 'C') + '||' + (task.id || task.name);
     const existing = taskMap.get(key);
     if (!existing) {
       taskMap.set(key, task);
