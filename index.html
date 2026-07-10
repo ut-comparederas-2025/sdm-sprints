@@ -1972,17 +1972,25 @@ function renderCompromisos() {
       const desde = [...new Set(continuan.flatMap(x => x.previos))]
         .sort((a, b) => sprintNumber(a) - sprintNumber(b))
         .map(s => s.replace(/sprint\s*/i, '')).join(',');
+      const progBadgeC = st => {
+        if (st.cat === 'COMPLETADO') return '<span class="cmp-sprint-badge" style="background:#e1f5ee;color:#085041">Entregada</span>';
+        if (st.label === 'No iniciado' || st.label === 'Sin estado') return '<span class="cmp-sprint-badge" style="background:#ecfeff;color:#0e7490">Programada</span>';
+        return '<span class="cmp-sprint-badge" style="background:#eff6ff;color:#1d4ed8">En ejecución</span>';
+      };
       continuanHtml = `<div class="cmp-group" style="border-left:4px solid #f59e0b">
         <div class="cmp-group-head" style="background:#fef3c7;color:#92400e">🔄 Tareas que continúan de Sprint ${desde} → ${escHtml(sprintVigente)} · ${continuan.length}</div>
         <table class="cmp-table">
-          <thead><tr><th>#</th><th>Tarea / Compromiso</th><th>Viene de</th><th>Estado actual</th><th>Entrega QA</th></tr></thead>
+          <thead><tr><th>#ID</th><th>Compromiso</th><th>Programación</th><th>Estado actual</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
           <tbody>${continuan.map(x => {
             const s = x.t.status;
+            const prod = /productivo/i.test(x.t.entorno || '');
             return `<tr>
-              <td style="color:#94a3b8;font-size:11px">${escHtml(x.k)}</td>
-              <td style="font-weight:600">${escHtml(criterioByKey[x.k] || x.t.name || ('Tarea ' + x.k))}</td>
-              <td>${x.previos.map(sp => `<span class="cmp-sprint-badge" style="background:#fef3c7;color:#92400e">${escHtml(sp)}</span>`).join(' ')}</td>
+              <td style="color:#94a3b8;font-size:11px">#${escHtml(x.k)}</td>
+              <td style="font-weight:600">${escHtml(criterioByKey[x.k] || x.t.name || ('Tarea ' + x.k))}
+                <div style="font-weight:400;font-size:11px;color:#94a3b8">Viene de ${x.previos.map(sp => escHtml(sp)).join(', ')}</div></td>
+              <td>${progBadgeC(s)}</td>
               <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
+              <td>${x.t.entorno ? `<span class="tbl-status-badge" style="background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}">${escHtml(x.t.entorno)}</span>` : '—'}</td>
               <td style="font-size:11.5px;white-space:nowrap">${fechaByKey[x.k] || '—'}</td>
             </tr>`;
           }).join('')}</tbody>
@@ -3073,7 +3081,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-5';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-6';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
