@@ -2103,7 +2103,6 @@ function renderCompromisos() {
   view.innerHTML = avisoCruce + `
     <div class="cmp-summary">
       ${kpi('Total tabla', total, '#0f1e36', 'compromisos')}
-      ${kpi('Sprint actual', svTot, '#0891b2', sprintVigente ? `${escHtml(sprintVigente)}: ${svPlan} planeadas · ${svEjec} en ejecución · ${svEntr} entregadas` : '')}
       ${kpi('Cumplidas previas', grupos.PREVIO.length, '#15803d', 'marcadas 000')}
       ${kpi('Cumplidas en sprints', grupos.CUMPLIDO.length, '#16a34a', 'entregadas')}
       ${kpi('En progreso', grupos.PROGRESO.length, '#1a56db', 'con avance reportado')}
@@ -2111,6 +2110,11 @@ function renderCompromisos() {
       ${kpi('Por asignar', grupos.PORASIGNAR.length, '#6b7280', 'número pendiente')}
       ${kpi('No aplica', grupos.NOAPLICA.length, '#6b7280')}
     </div>
+    ${sprintVigente ? `<div style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;padding:10px 16px;margin-bottom:14px;font-size:13px;color:#0e7490">
+      🗓️ <strong>${escHtml(sprintVigente)}</strong> — ${svTot} tareas de implementación en curso:
+      <strong>${svPlan}</strong> planeadas · <strong>${svEjec}</strong> en ejecución · <strong>${svEntr}</strong> entregadas
+      <span style="color:#64748b;font-size:11.5px">(ya incluidas en las tarjetas de arriba)</span>
+    </div>` : ''}
     ${panelHtml}
     ${chartsHtml}
     ${continuanHtml}
@@ -3123,7 +3127,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-11';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-12';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
