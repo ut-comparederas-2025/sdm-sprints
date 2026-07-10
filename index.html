@@ -1738,20 +1738,38 @@ function parseCompromisos(csvText) {
       seen[h] = 1; return h;
     },
   });
+  const rows = res.data || [];
+  if (!rows.length) return [];
+
+  // Resolver nombres de columna reales, insensible a mayúsculas/tildes/espacios,
+  // para que el cruce no falle si el encabezado cambia de forma.
+  const keys = Object.keys(rows[0]);
+  const nk = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+                    .replace(/\s+/g, ' ').trim().toUpperCase();
+  const findKey = (...cands) => {
+    for (const c of cands) { const hit = keys.find(k => nk(k) === nk(c)); if (hit) return hit; }
+    for (const c of cands) { const hit = keys.find(k => nk(k).includes(nk(c))); if (hit) return hit; }
+    return null;
+  };
+  const K_CRIT  = findKey('CRITERIO', 'COMPROMISO', 'DESCRIPCION', 'TAREA');
+  const K_PROP  = findKey('PROPIEDAD') || keys.find(k => nk(k) === 'ID') || null;
+  const K_EST   = findKey('ESTADO ACTUAL', 'ESTADO');
+  const K_ASP   = keys.includes('ASPECTO__2') ? 'ASPECTO__2' : findKey('ASPECTO');
+  const K_FECHA = keys.find(k => /FECHA\s*ENTREGA/i.test(k)) || findKey('ENTREGA QA', 'FECHA MAXIMA', 'FECHA LIMITE');
+
   let lastAspecto = '';
   const list = [];
-  (res.data || []).forEach(row => {
-    const crit = (row['CRITERIO'] || '').trim();
+  rows.forEach(row => {
+    const crit = K_CRIT ? String(row[K_CRIT] || '').trim() : '';
     if (!crit) return;
-    const aspecto = ((row['ASPECTO__2'] || '') + '').replace(/\s*\n\s*/g, ' · ').trim();
+    const aspecto = K_ASP ? String(row[K_ASP] || '').replace(/\s*\n\s*/g, ' · ').trim() : '';
     if (aspecto) lastAspecto = aspecto;
-    let fechaRaw = '';
-    for (const k in row) { if (/^FECHA ENTREGA/i.test(k)) { fechaRaw = (row[k] || '').trim(); break; } }
+    const fechaRaw = K_FECHA ? String(row[K_FECHA] || '').trim() : '';
     list.push({
       criterio: crit,
       aspecto: lastAspecto,
-      idRaw: (row['Propiedad'] || '').trim(),
-      estadoActual: (row['ESTADO ACTUAL'] || '').trim().toUpperCase(),
+      idRaw: K_PROP ? String(row[K_PROP] || '').trim() : '',
+      estadoActual: K_EST ? String(row[K_EST] || '').trim().toUpperCase() : '',
       fechaRaw,
       fecha: parseFechaCompromiso(fechaRaw),
     });
@@ -1794,9 +1812,12 @@ function renderCompromisos() {
     const porVencer = c.fecha && c.fecha >= hoy ? Math.round((c.fecha - hoy) / MS) : null;
     const item = Object.assign({}, c, { id, tasks, latest, sprints, vencidaDias, porVencer });
 
+    // Tiene avance = existe al menos un reporte en Avance Sprint (de cualquier
+    // sprint o con "C") cuyo Status homologado NO sea "No iniciado" (Not started).
+    const hasAvance = !!latest && latest.status.label !== 'No iniciado';
     if (esCero || (c.estadoActual === 'CUMPLE' && !tasks.length)) grupos.PREVIO.push(item);
     else if (latest && latest.enProduccion) grupos.CUMPLIDO.push(item);
-    else if (tasks.length) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
+    else if (hasAvance) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
     else if (vencidaDias > 0) grupos.VENCIDO.push(item);
     else grupos.INICIAR.push(item);
   });
@@ -1882,9 +1903,9 @@ function renderCompromisos() {
       ${kpi('Cumplidos previos', grupos.PREVIO.length, '#047857')}
       ${kpi('Adicionales', grupos.ADICIONAL.length, '#6d28d9', 'reportados con C, fuera de tabla')}
     </div>
-    ${grupoCard('VENCIDO', '⚠️ Vencidos sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin tarea')}
-    ${grupoCard('PROGRESO', '🔵 En progreso', '#eff6ff', '#1d4ed8', 'en trabajo dentro de los sprints')}
-    ${grupoCard('INICIAR', '⚪ Por iniciar', '#f1f5f9', '#475569', 'sin tarea aún')}
+    ${grupoCard('VENCIDO', '⚠️ Vencidos sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin avance reportado')}
+    ${grupoCard('PROGRESO', '🔵 En progreso', '#eff6ff', '#1d4ed8', 'con avance reportado en Avance Sprint')}
+    ${grupoCard('INICIAR', '⚪ Por iniciar', '#f1f5f9', '#475569', 'sin reporte o en Not started')}
     ${grupoCard('CUMPLIDO', '✅ Cumplidos en sprints', '#ecfdf5', '#047857', 'trabajados y entregados')}
     ${grupoCard('PREVIO', '✔️ Cumplidos previos (000)', '#e1f5ee', '#065f46', 'no requirieron trabajo')}
     ${grupoCard('ADICIONAL', '➕ Adicionales reportados', '#f5f3ff', '#6d28d9', 'avances con C que no están en la Tabla Implementación')}
