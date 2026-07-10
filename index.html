@@ -1931,6 +1931,25 @@ function renderCompromisos() {
   cmpGruposCache = grupos;
 
   const total = compromisosData.length;
+
+  // Tareas de implementación del sprint vigente (mismo cálculo que la sección
+  // inferior de la pestaña del sprint): tareas "C" únicas con destino al sprint.
+  const tareasSV = {};
+  if (sprintVigente) allTasks.forEach(t => {
+    if (t.id && t.esCompromiso && (t.sprintsDestino || []).includes(sprintVigente)) {
+      const k = matchId(t.id);
+      const prev = tareasSV[k];
+      if (!prev || (parseFechaReporte(t.fechaReporte) || 0) >= (parseFechaReporte(prev.fechaReporte) || 0)) tareasSV[k] = t;
+    }
+  });
+  let svPlan = 0, svEjec = 0, svEntr = 0;
+  Object.values(tareasSV).forEach(t => {
+    if (t.status.cat === 'COMPLETADO' || t.enProduccion) svEntr++;
+    else if (t.status.label === 'No iniciado' || t.status.label === 'Sin estado') svPlan++;
+    else svEjec++;
+  });
+  const svTot = svPlan + svEjec + svEntr;
+
   const kpi = (lbl, val, color, sub) => `<div class="cmp-kpi"><div class="lbl"${color ? ` style="color:${color}"` : ''}>${lbl}</div><div class="val"${color ? ` style="color:${color}"` : ''}>${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
 
@@ -2059,7 +2078,7 @@ function renderCompromisos() {
   view.innerHTML = avisoCruce + `
     <div class="cmp-summary">
       ${kpi('Total tabla', total)}
-      ${kpi('Sprint actual', grupos.PLANEADA.length, '#0e7490', sprintVigente ? 'planeadas en ' + escHtml(sprintVigente) : '')}
+      ${kpi('Sprint actual', svTot, '#0e7490', sprintVigente ? `${escHtml(sprintVigente)}: ${svPlan} planeadas · ${svEjec} en ejecución · ${svEntr} entregadas` : '')}
       ${kpi('No aplica', grupos.NOAPLICA.length, '#5f5e5a')}
       ${kpi('Cumplidas previas', grupos.PREVIO.length, '#047857', 'marcadas 000')}
     </div>
@@ -3015,7 +3034,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-3';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-4';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
