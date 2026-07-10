@@ -1627,8 +1627,22 @@ function parseRow(rowObj) {
   // "C" = avance de COMPROMISOS: no es un sprint (no crea pestaña ni entra en KPIs),
   // pero sí cuenta como avance en la Fase de Implementación (cruce por Propiedad).
   const sprintRaw = get('Sprint SDM').trim();
-  const esAvanceCompromiso = /^(c|compromisos?|sprint\s+c)$/i.test(sprintRaw);
+  const esAvanceCompromiso = /^(c|compromisos?|sprint\s*c)$/i.test(sprintRaw);
   const sprint = esAvanceCompromiso ? null : (normalizeSprintName(sprintRaw) || null);
+  // Sprint destino: sprint en el que se planea/desarrolla la tarea. Para filas "C"
+  // se busca en las demás columnas tipo sprint (duplicadas "Sprint SDM__2", "Sprint").
+  let sprintDestino = sprint;
+  if (!sprintDestino) {
+    for (let i = 0; i < keys.length; i++) {
+      const kn = keysNorm[i];
+      if (kn === 'sprint sdm' || kn === 'sprint') {
+        const v = (rowObj[keys[i]] || '').trim();
+        let m = v.match(/sprint\s*0*(\d{1,2})\b/i);
+        if (!m && /^\d{1,2}$/.test(v)) m = [null, v];
+        if (m) { sprintDestino = 'Sprint ' + parseInt(m[1], 10); break; }
+      }
+    }
+  }
   const status     = getStatus(get('Status'));
   const projects   = parseProjects(get('Proyecto'));
   const priority   = parsePriority(get('Priority'));
@@ -1666,6 +1680,7 @@ function parseRow(rowObj) {
     entorno: get('Entorno'),
     fase:    get('Fase'),
     esCompromiso: esAvanceCompromiso,
+    sprintDestino,
   };
 }
 
@@ -1794,6 +1809,8 @@ function parseCompromisos(csvText) {
   return list;
 }
 
+let faseEstadoFiltro = null;   // filtro activo del panel "Detalle por estado" en Fase
+
 function renderCompromisos() {
   const view = document.getElementById('compromisos-view');
   if (!view) return;
@@ -1810,13 +1827,14 @@ function renderCompromisos() {
   const byId = {};
   allTasks.forEach(t => { if (t.id) { const k = matchId(t.id); (byId[k] = byId[k] || []).push(t); } });
 
-  const grupos = { VENCIDO: [], PROGRESO: [], PLANEADA: [], INICIAR: [], CUMPLIDO: [], PREVIO: [] };
+  const grupos = { VENCIDO: [], PROGRESO: [], PLANEADA: [], INICIAR: [], PORASIGNAR: [], NOAPLICA: [], CUMPLIDO: [], PREVIO: [] };
   let retrasoProg = 0;
   let totConNumero = 0, totCruzados = 0;   // diagnóstico de cruce
+  const estadoCounts = {};                 // conteo por estado (solo con número)
+  let sinReporte = 0;
+  const porSprint = {};                    // {sprint: {plan, prog, done}}
 
   // Sprint vigente (mismo criterio que las pestañas): el mayor con tareas pendientes.
-  // Todo compromiso reportado en el sprint vigente se está trabajando AHORA,
-  // así que no puede aparecer como vencido.
   const sprintsAll = [...new Set(allTasks.map(t => t.sprint).filter(Boolean))]
     .sort((a, b) => sprintNumber(a) - sprintNumber(b));
   const hasPend = s => allTasks.filter(t => t.sprint === s).some(t => t.status.cat !== 'COMPLETADO');
@@ -1826,8 +1844,8 @@ function renderCompromisos() {
   compromisosData.forEach(c => {
     const id = normId(c.idRaw);
     const esCero = /^0+$/.test(id);
-    // Sin tarea asignada = Propiedad vacía o "No aplica"
-    const esNoAplica = /no\s*aplica/i.test(c.idRaw);
+    const esNoAplica = /no\s*aplica/i.test(c.idRaw);   // no se va a desarrollar
+    const sinNumero = !esNoAplica && !id;              // aún por asignar número
     const tasks = (!esCero && !esNoAplica && id) ? (byId[matchId(c.idRaw)] || []) : [];
     if (!esCero && !esNoAplica && id) { totConNumero++; if (tasks.length) totCruzados++; }
     let latest = null;
@@ -1837,24 +1855,38 @@ function renderCompromisos() {
         return fb > fa ? b : a;
       });
     }
-    const sprints = [...new Set(tasks.map(t => t.sprint).filter(Boolean))].sort((a,b) => sprintNumber(a) - sprintNumber(b));
+    // Sprints donde se trabaja o planea (incluye el sprint destino de los reportes "C")
+    const sprints = [...new Set(tasks.map(t => t.sprint || t.sprintDestino).filter(Boolean))]
+      .sort((a,b) => sprintNumber(a) - sprintNumber(b));
     const vencidaDias = c.fecha && c.fecha < hoy ? Math.round((hoy - c.fecha) / MS) : 0;
     const porVencer = c.fecha && c.fecha >= hoy ? Math.round((c.fecha - hoy) / MS) : null;
     const item = Object.assign({}, c, { id, tasks, latest, sprints, vencidaDias, porVencer });
 
-    // Tiene avance = existe al menos un reporte en Avance Sprint (de cualquier
-    // sprint o con "C") cuyo Status homologado NO sea "No iniciado" (Not started).
-    const hasAvance = !!latest && latest.status.label !== 'No iniciado' && latest.status.label !== 'Sin estado';
-    // Cumplido = el último reporte está en categoría COMPLETADO (Terminado en QA,
-    // En Pruebas SDM, Aprobado por SDM, Despliegue Piloto, Piloto Aprobado,
-    // Finalizado, Archivado…), igual que en los sprints; o ya está en Productivo.
-    const esCumplido = !!latest && (latest.status.cat === 'COMPLETADO' || latest.enProduccion);
-    // En trabajo dentro del sprint vigente: no puede estar vencido.
-    const enSprintVigente = !!sprintVigente && tasks.some(t => t.sprint === sprintVigente);
+    const label = latest ? latest.status.label : null;
+    const cat   = latest ? latest.status.cat : null;
+    // Tiene avance = algún reporte (de sprint o "C") con Status distinto de "No iniciado".
+    const hasAvance = !!latest && label !== 'No iniciado' && label !== 'Sin estado';
+    // Cumplido = último reporte en categoría COMPLETADO o ya en Productivo.
+    const esCumplido = !!latest && (cat === 'COMPLETADO' || latest.enProduccion);
+    // Planeada/trabajándose en el sprint vigente: nunca vencida.
+    const enSprintVigente = !!sprintVigente && sprints.includes(sprintVigente);
+
+    // Conteos para el panel de estados y la gráfica por sprint
+    if (!esCero && !esNoAplica && id) {
+      if (latest) estadoCounts[label] = (estadoCounts[label] || 0) + 1;
+      else sinReporte++;
+      sprints.forEach(s => {
+        const ps = porSprint[s] = porSprint[s] || { plan: 0, prog: 0, done: 0 };
+        if (esCumplido) ps.done++; else if (hasAvance) ps.prog++; else ps.plan++;
+      });
+    }
+
     if (esCero || (c.estadoActual === 'CUMPLE' && !tasks.length)) grupos.PREVIO.push(item);
+    else if (esNoAplica) grupos.NOAPLICA.push(item);
+    else if (sinNumero) grupos.PORASIGNAR.push(item);
     else if (esCumplido) grupos.CUMPLIDO.push(item);
     else if (hasAvance) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
-    else if (enSprintVigente) grupos.PLANEADA.push(item);   // asignada al sprint actual, aún sin iniciar
+    else if (enSprintVigente) grupos.PLANEADA.push(item);
     else if (vencidaDias > 0) grupos.VENCIDO.push(item);
     else grupos.INICIAR.push(item);
   });
@@ -1892,14 +1924,87 @@ function renderCompromisos() {
   const kpi = (lbl, val, color, sub) => `<div class="cmp-kpi"><div class="lbl"${color ? ` style="color:${color}"` : ''}>${lbl}</div><div class="val"${color ? ` style="color:${color}"` : ''}>${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
 
+  // ── Panel "Detalle por estado" (mismas categorías de los sprints) ──
+  const panelHtml = `<div class="status-panel">
+    <div class="status-panel-head">
+      <div class="status-panel-title">Detalle por estado — tareas de implementación (${totConNumero})</div>
+      <div class="status-panel-hint">clic en un estado para filtrar las listas</div>
+    </div>
+    <div class="status-panel-grid">` +
+    Object.keys(STATUS_PANEL_LAYOUT).map(catKey => {
+      const meta = CAT_META[catKey];
+      const labels = STATUS_PANEL_LAYOUT[catKey];
+      const catTotal = labels.reduce((s, l) => s + (estadoCounts[l] || 0), 0);
+      return `<div class="sp-col">
+        <div class="sp-col-head" style="background:${meta.bg};color:${meta.color}">${meta.title} · ${catTotal}</div>` +
+        labels.map(l => {
+          const n = estadoCounts[l] || 0;
+          return `<div class="sp-item ${n ? '' : 'zero'} ${faseEstadoFiltro === l ? 'active' : ''}" data-estado="${escHtml(l)}">
+            <span>${escHtml(l)}</span><span class="sp-count" style="background:#f1f5f9;color:#475569">${n}</span></div>`;
+        }).join('') +
+      `</div>`;
+    }).join('') +
+    `</div>
+    ${sinReporte ? `<div style="margin-top:8px;font-size:12px;color:#64748b">Con número pero sin reporte en Avance Sprint: <strong>${sinReporte}</strong></div>` : ''}
+    ${faseEstadoFiltro ? `<div class="status-filter-chip"><button id="fase-filter-clear">Filtro: ${escHtml(faseEstadoFiltro)} ✕</button></div>` : ''}
+  </div>`;
+
+  // ── Gráficas ──
+  const nPrev = grupos.PREVIO.length, nDone = grupos.CUMPLIDO.length, nProg = grupos.PROGRESO.length,
+        nPlan = grupos.PLANEADA.length, nSin = grupos.VENCIDO.length + grupos.INICIAR.length,
+        nOtros = grupos.PORASIGNAR.length + grupos.NOAPLICA.length;
+  const pct = n => total ? Math.round(n * 100 / total) : 0;
+  const cumplPct = pct(nPrev + nDone);
+  const seg = (n, color, lbl) => n ? `<div style="width:${Math.max(pct(n), 2)}%;background:${color}" title="${lbl}: ${n}"></div>` : '';
+  const chartGeneral = `<div class="cmp-group" style="margin-bottom:0">
+    <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.4px;margin-bottom:8px">AVANCE GENERAL DE LA TABLA</div>
+    <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;background:#f1f5f9">
+      ${seg(nPrev, '#0f6e56', 'Cumplidas previas')}${seg(nDone, '#5dcaa5', 'Cumplidas en sprints')}${seg(nProg, '#378add', 'En progreso')}${seg(nPlan, '#67e8f9', 'Planeadas sprint actual')}${seg(nSin, '#e24b4a', 'Sin avance')}${seg(nOtros, '#d3d1c7', 'Por asignar / No aplica')}
+    </div>
+    <div style="font-size:11.5px;color:#64748b;margin-top:6px;line-height:1.8">
+      <span style="color:#0f6e56">■</span> Previas ${nPrev} · <span style="color:#5dcaa5">■</span> Cumplidas ${nDone} · <span style="color:#378add">■</span> En progreso ${nProg} · <span style="color:#0e7490">■</span> Planeadas ${nPlan} · <span style="color:#e24b4a">■</span> Sin avance ${nSin} · <span style="color:#888780">■</span> Por asignar/No aplica ${nOtros}
+    </div>
+    <div style="font-size:13px;margin-top:6px">Cumplimiento: <strong style="color:#0f6e56">${nPrev + nDone} de ${total} (${cumplPct}%)</strong></div>
+  </div>`;
+
+  const spKeys = Object.keys(porSprint).sort((a, b) => sprintNumber(a) - sprintNumber(b));
+  let chartSprints = '';
+  if (spKeys.length) {
+    const maxT = Math.max(...spKeys.map(s => porSprint[s].plan + porSprint[s].prog + porSprint[s].done)) || 1;
+    chartSprints = `<div class="cmp-group" style="margin-bottom:0">
+      <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.4px;margin-bottom:8px">TAREAS DE IMPLEMENTACIÓN POR SPRINT</div>
+      <div style="display:flex;align-items:flex-end;gap:22px;height:112px;padding:0 8px">` +
+      spKeys.map(s => {
+        const d = porSprint[s];
+        const h = v => Math.round(v * 88 / maxT);
+        return `<div style="flex:1;max-width:130px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;text-align:center">
+          <div style="font-size:11px;color:#334155;margin-bottom:2px">${d.done + d.prog + d.plan}</div>
+          ${d.plan ? `<div style="background:#b4b2a9;height:${h(d.plan)}px" title="Planeadas/sin iniciar: ${d.plan}"></div>` : ''}
+          ${d.prog ? `<div style="background:#378add;height:${h(d.prog)}px" title="En progreso: ${d.prog}"></div>` : ''}
+          ${d.done ? `<div style="background:#5dcaa5;height:${h(d.done)}px;border-radius:0 0 3px 3px" title="Cumplidas: ${d.done}"></div>` : ''}
+          <div style="font-size:11px;color:#64748b;margin-top:4px;white-space:nowrap">${escHtml(s)}${s === sprintVigente ? ' ●' : ''}</div>
+        </div>`;
+      }).join('') +
+      `</div>
+      <div style="font-size:11.5px;color:#64748b;margin-top:4px"><span style="color:#5dcaa5">■</span> Cumplidas · <span style="color:#378add">■</span> En progreso · <span style="color:#888780">■</span> Planeadas/sin iniciar</div>
+    </div>`;
+  }
+  const chartsHtml = `<div style="display:grid;grid-template-columns:${chartSprints ? '1fr 1fr' : '1fr'};gap:10px;margin-bottom:10px">${chartGeneral}${chartSprints}</div>`;
+
+  // ── Filas y tarjetas de grupo (con columna Sprint) ──
+  const aplicaFiltro = it => !faseEstadoFiltro || (it.latest && it.latest.status.label === faseEstadoFiltro);
+
   const fila = (it, grupo) => {
-    let sprintBadges = it.sprints.map(s => ` <span class="cmp-sprint-badge">${escHtml(s)}</span>`).join('');
-    if (!sprintBadges && it.tasks.length) sprintBadges = ' <span class="cmp-sprint-badge" style="background:#f1f5f9;color:#64748b">Fuera de sprint</span>';
+    const sprintCell = it.sprints.length
+      ? it.sprints.map(s => `<span class="cmp-sprint-badge">${escHtml(s)}</span>`).join(' ')
+      : (it.tasks.length ? '<span class="cmp-sprint-badge" style="background:#f1f5f9;color:#64748b">Fuera de sprint</span>' : '<span style="color:#cbd5e1">—</span>');
     let estadoHtml;
     if (grupo === 'PREVIO') estadoHtml = '<span class="tbl-status-badge" style="background:#e1f5ee;color:#085041">✔ Cumplido previo</span>';
     else if (grupo === 'PLANEADA') estadoHtml = '<span class="tbl-status-badge" style="background:#cffafe;color:#0e7490">🗓️ Planeada</span>';
+    else if (grupo === 'PORASIGNAR') estadoHtml = '<span class="tbl-status-badge" style="background:#f1f5f9;color:#475569">Por asignar</span>';
+    else if (grupo === 'NOAPLICA') estadoHtml = '<span class="tbl-status-badge" style="background:#f3f4f6;color:#6b7280">No aplica</span>';
     else if (it.latest) { const s = it.latest.status; estadoHtml = `<span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span>`; }
-    else estadoHtml = '<span class="tbl-status-badge" style="background:#f1f5f9;color:#64748b">Sin iniciar</span>';
+    else estadoHtml = '<span class="tbl-status-badge" style="background:#f1f5f9;color:#64748b">Sin reporte</span>';
     const prod = it.latest && /productivo/i.test(it.latest.entorno || '');
     const entorno = it.latest && it.latest.entorno
       ? `<span class="tbl-status-badge" style="background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}">${escHtml(it.latest.entorno)}</span>`
@@ -1912,20 +2017,21 @@ function renderCompromisos() {
     if (grupo === 'CUMPLIDO' && it.fecha) fechaHtml += ' <span style="color:#15803d">✓</span>';
     return `<tr>
       <td style="color:#94a3b8;font-size:11px;white-space:nowrap;width:44px">${escHtml(it.id) || '—'}</td>
-      <td><div style="font-weight:600">${escHtml(it.criterio)}${sprintBadges}</div><div style="font-size:11px;color:#94a3b8">${escHtml(it.aspecto)}</div></td>
-      <td style="width:150px">${estadoHtml}</td>
-      <td style="width:120px">${entorno}</td>
-      <td style="font-size:11.5px;white-space:nowrap;width:150px">${fechaHtml}</td>
+      <td><div style="font-weight:600">${escHtml(it.criterio)}</div><div style="font-size:11px;color:#94a3b8">${escHtml(it.aspecto)}</div></td>
+      <td style="width:104px">${sprintCell}</td>
+      <td style="width:148px">${estadoHtml}</td>
+      <td style="width:112px">${entorno}</td>
+      <td style="font-size:11.5px;white-space:nowrap;width:148px">${fechaHtml}</td>
     </tr>`;
   };
 
   const grupoCard = (key, titulo, bg, color, extra) => {
-    const g = grupos[key];
+    const g = grupos[key].filter(aplicaFiltro);
     if (!g.length) return '';
     return `<div class="cmp-group">
       <div class="cmp-group-head" style="background:${bg};color:${color}">${titulo} · ${g.length}${extra ? ' — ' + extra : ''}</div>
       <table class="cmp-table">
-        <thead><tr><th>#</th><th>Compromiso</th><th>Estado</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
+        <thead><tr><th>#</th><th>Compromiso</th><th>Sprint</th><th>Estado</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
         <tbody>${g.map(it => fila(it, key)).join('')}</tbody>
       </table>
     </div>`;
@@ -1942,23 +2048,38 @@ function renderCompromisos() {
 
   view.innerHTML = avisoCruce + `
     <div class="cmp-summary">
-      ${kpi('Total', total)}
-      ${kpi('Vencidos sin avance', grupos.VENCIDO.length, '#b91c1c')}
-      ${kpi('En progreso', grupos.PROGRESO.length, '#1d4ed8', retrasoProg ? `<span style="color:#b91c1c;font-weight:700">${retrasoProg} con retraso</span>` : '')}
+      ${kpi('Total tabla', total)}
+      ${kpi('Con tarea', totConNumero, '#185fa5', 'estado según Avance Sprint')}
+      ${kpi('Vencidas sin avance', grupos.VENCIDO.length, '#b91c1c')}
       ${kpi('Sprint actual', grupos.PLANEADA.length, '#0e7490', sprintVigente ? 'planeadas en ' + escHtml(sprintVigente) : '')}
-      ${kpi('Por iniciar', grupos.INICIAR.length, '#64748b')}
-      ${kpi('Cumplidos en sprints', grupos.CUMPLIDO.length, '#15803d')}
-      ${kpi('Cumplidos previos', grupos.PREVIO.length, '#047857')}
-      ${kpi('Adicionales', grupos.ADICIONAL.length, '#6d28d9', 'reportados con C, fuera de tabla')}
+      ${kpi('Por asignar', grupos.PORASIGNAR.length, '#5f5e5a', 'número pendiente')}
+      ${kpi('No aplica', grupos.NOAPLICA.length, '#5f5e5a')}
+      ${kpi('Cumplidas previas', grupos.PREVIO.length, '#047857', 'marcadas 000')}
+      ${kpi('Adicionales', grupos.ADICIONAL.length, '#6d28d9', 'con C, fuera de tabla')}
     </div>
-    ${grupoCard('VENCIDO', '⚠️ Vencidos sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin avance reportado')}
+    ${panelHtml}
+    ${chartsHtml}
+    ${grupoCard('VENCIDO', '⚠️ Vencidas sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin avance reportado')}
     ${grupoCard('PROGRESO', '🔵 En progreso', '#eff6ff', '#1d4ed8', 'con avance reportado en Avance Sprint')}
     ${grupoCard('PLANEADA', '🗓️ Sprint actual — planeadas', '#ecfeff', '#0e7490', sprintVigente ? 'asignadas a ' + escHtml(sprintVigente) + ', aún sin iniciar' : 'asignadas al sprint vigente, aún sin iniciar')}
-    ${grupoCard('INICIAR', '⚪ Por iniciar', '#f1f5f9', '#475569', 'sin reporte o en Not started')}
-    ${grupoCard('CUMPLIDO', '✅ Cumplidos en sprints', '#ecfdf5', '#047857', 'trabajados y entregados')}
-    ${grupoCard('PREVIO', '✔️ Cumplidos previos (000)', '#e1f5ee', '#065f46', 'no requirieron trabajo')}
-    ${grupoCard('ADICIONAL', '➕ Adicionales reportados', '#f5f3ff', '#6d28d9', 'avances con C que no están en la Tabla Implementación')}
+    ${grupoCard('INICIAR', '⚪ Por iniciar', '#f1f5f9', '#475569', 'con número, sin avance y fecha vigente')}
+    ${grupoCard('PORASIGNAR', '🔖 Por asignar número', '#f1efe8', '#444441', 'se les asignará número para reportar avance')}
+    ${grupoCard('NOAPLICA', '🚫 No aplica', '#f3f4f6', '#6b7280', 'no se van a desarrollar')}
+    ${grupoCard('CUMPLIDO', '✅ Cumplidas en sprints', '#ecfdf5', '#047857', 'trabajadas y entregadas')}
+    ${grupoCard('PREVIO', '✔️ Cumplidas previas (000)', '#e1f5ee', '#065f46', 'no requirieron trabajo')}
+    ${grupoCard('ADICIONAL', '➕ Adicionales reportadas', '#f5f3ff', '#6d28d9', 'avances con C que no están en la Tabla Implementación')}
   `;
+
+  // Interacción del panel de estados
+  view.querySelectorAll('.sp-item:not(.zero)').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = el.dataset.estado;
+      faseEstadoFiltro = (faseEstadoFiltro === l) ? null : l;
+      renderCompromisos();
+    });
+  });
+  const fclear = view.querySelector('#fase-filter-clear');
+  if (fclear) fclear.addEventListener('click', () => { faseEstadoFiltro = null; renderCompromisos(); });
 }
 
 function renderSprintCompromisos() {
@@ -1966,10 +2087,11 @@ function renderSprintCompromisos() {
   if (!section) return;
   if (isCompromisosView() || !compromisosData || !compromisosData.length) { section.style.display = 'none'; return; }
 
-  // Tareas del sprint activo indexadas por Propiedad
+  // Tareas del sprint activo indexadas por Propiedad: reportadas EN este sprint
+  // o con "C" cuyo sprint destino es este sprint (programadas).
   const byIdSprint = {};
   allTasks.forEach(t => {
-    if (t.id && t.sprint === activeSprint) {
+    if (t.id && (t.sprint === activeSprint || (t.esCompromiso && t.sprintDestino === activeSprint))) {
       const k = matchId(t.id);
       (byIdSprint[k] = byIdSprint[k] || []).push(t);
     }
@@ -1991,14 +2113,21 @@ function renderSprintCompromisos() {
   document.getElementById('sprint-compromisos-title').textContent = `🚀 Tareas Fase de implementación en ${activeSprint}`;
   document.getElementById('sprint-compromisos-badge').textContent = items.length;
   const fmtF = d => d ? d.toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
+  // Programación: refleja el ciclo programada → en ejecución → entregada
+  const progBadge = st => {
+    if (st.cat === 'COMPLETADO') return '<span class="cmp-sprint-badge" style="background:#e1f5ee;color:#085041">Entregada</span>';
+    if (st.label === 'No iniciado' || st.label === 'Sin estado') return '<span class="cmp-sprint-badge" style="background:#ecfeff;color:#0e7490">Programada</span>';
+    return '<span class="cmp-sprint-badge" style="background:#eff6ff;color:#1d4ed8">En ejecución</span>';
+  };
   document.getElementById('sprint-compromisos-list').innerHTML = `<table class="carryover-table">
-    <thead><tr><th>#ID</th><th>Compromiso</th><th>Estado</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
+    <thead><tr><th>#ID</th><th>Compromiso</th><th>Programación</th><th>Estado actual</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
     <tbody>${items.map(x => {
       const s = x.latest.status;
       const prod = /productivo/i.test(x.latest.entorno || '');
       return `<tr>
         <td style="color:#94a3b8;font-size:11px">#${escHtml(x.id)}</td>
         <td style="font-weight:600">${escHtml(x.c.criterio)}<div style="font-weight:400;font-size:11px;color:#94a3b8">${escHtml(x.c.aspecto)}</div></td>
+        <td>${progBadge(s)}</td>
         <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
         <td>${x.latest.entorno ? `<span class=\"tbl-status-badge\" style=\"background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}\">${escHtml(x.latest.entorno)}</span>` : '—'}</td>
         <td style="font-size:11.5px;white-space:nowrap">${x.c.fecha ? fmtF(x.c.fecha) : escHtml(x.c.fechaRaw || '—')}</td>
@@ -2009,11 +2138,11 @@ function renderSprintCompromisos() {
 
 function exportCompromisosExcel() {
   if (!cmpGruposCache) { toast('⚠️ No hay compromisos cargados'); return; }
-  const NOM = { VENCIDO:'Vencido sin avance', PROGRESO:'En progreso', PLANEADA:'Planeada (sprint actual)', INICIAR:'Por iniciar', CUMPLIDO:'Cumplido en sprints', PREVIO:'Cumplido previo', ADICIONAL:'Adicional (fuera de tabla)' };
+  const NOM = { VENCIDO:'Vencida sin avance', PROGRESO:'En progreso', PLANEADA:'Planeada (sprint actual)', INICIAR:'Por iniciar', PORASIGNAR:'Por asignar número', NOAPLICA:'No aplica', CUMPLIDO:'Cumplida en sprints', PREVIO:'Cumplida previa', ADICIONAL:'Adicional (fuera de tabla)' };
   const rows = [['#ID','Compromiso','Aspecto','Grupo','Sprint(s)','Estado','Entorno','Fecha entrega QA','Días de retraso']];
   Object.keys(cmpGruposCache).forEach(k => cmpGruposCache[k].forEach(it => rows.push([
     it.id || '', it.criterio, it.aspecto, NOM[k], it.sprints.join(', '),
-    it.latest ? it.latest.status.label : (k === 'PREVIO' ? 'Cumplido previo' : 'Sin iniciar'),
+    it.latest ? it.latest.status.label : (k === 'PREVIO' ? 'Cumplida previa' : (k === 'PORASIGNAR' ? 'Por asignar' : (k === 'NOAPLICA' ? 'No aplica' : 'Sin reporte'))),
     it.latest ? (it.latest.entorno || '') : '',
     it.fechaRaw || '',
     (k !== 'PREVIO' && k !== 'CUMPLIDO' && it.vencidaDias > 0) ? it.vencidaDias : ''
