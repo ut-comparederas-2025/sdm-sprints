@@ -2093,11 +2093,11 @@ function renderSprintCompromisos() {
   if (!section) return;
   if (isCompromisosView() || !compromisosData || !compromisosData.length) { section.style.display = 'none'; return; }
 
-  // Tareas del sprint activo indexadas por Propiedad: reportadas EN este sprint
-  // o con "C" cuyo sprint destino es este sprint (programadas).
+  // SOLO reportes "C" (Fase de Implementación) cuyo Sprint SDM (col. AE)
+  // incluye el sprint activo — coincide con filtrar C + sprint en el Sheet.
   const byIdSprint = {};
   allTasks.forEach(t => {
-    if (t.id && (t.sprint === activeSprint || (t.esCompromiso && (t.sprintsDestino || []).includes(activeSprint)))) {
+    if (t.id && t.esCompromiso && (t.sprintsDestino || []).includes(activeSprint)) {
       const k = matchId(t.id);
       (byIdSprint[k] = byIdSprint[k] || []).push(t);
     }
