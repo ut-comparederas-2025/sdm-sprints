@@ -2085,7 +2085,7 @@ function renderCompromisos() {
       ? `<span class="tbl-status-badge" style="background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}">${escHtml(it.latest.entorno)}</span>`
       : '<span style="color:#cbd5e1">—</span>';
     let fechaHtml = it.fecha ? fmtF(it.fecha) : (it.fechaRaw && !/^n\.?a/i.test(it.fechaRaw) ? escHtml(it.fechaRaw) : '<span style="color:#cbd5e1">—</span>');
-    if (grupo === 'VENCIDO' || grupo === 'PROGRESO' || grupo === 'INICIAR') {
+    if (grupo === 'VENCIDO' || grupo === 'INICIAR') {
       if (it.vencidaDias > 0) fechaHtml += ` <span class="cmp-late">${it.vencidaDias} día${it.vencidaDias === 1 ? '' : 's'} de retraso</span>`;
       else if (it.porVencer !== null) fechaHtml += ` <span style="color:#b45309;font-weight:600;font-size:11px">en ${it.porVencer} día${it.porVencer === 1 ? '' : 's'}</span>`;
     }
@@ -3081,7 +3081,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-6';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-7';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
