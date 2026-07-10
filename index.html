@@ -2034,14 +2034,14 @@ function renderCompromisos() {
   const chartsHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:16px">
     <div class="chart-card">
       <div class="chart-title">Avance general de la tabla · ${total} compromisos</div>
-      <div class="chart-wrap donut">
+      <div class="chart-wrap donut" style="height:250px">
         <canvas id="fase-chart-general"></canvas>
-        <div class="donut-center"><div class="donut-center-val">${cumplPct}%</div><div class="donut-center-lbl">cumplimiento</div></div>
+        <div class="donut-center" style="left:34%"><div class="donut-center-val">${cumplPct}%</div><div class="donut-center-lbl">cumplimiento</div></div>
       </div>
     </div>
     ${spKeys.length ? `<div class="chart-card">
       <div class="chart-title">Tareas de implementación por sprint</div>
-      <div class="chart-wrap bar"><canvas id="fase-chart-sprints"></canvas></div>
+      <div class="chart-wrap bar" style="height:250px"><canvas id="fase-chart-sprints"></canvas></div>
     </div>` : ''}
   </div>`;
 
@@ -2145,17 +2145,23 @@ function renderCompromisos() {
     if (elG) window.faseChartRefs.push(new Chart(elG, {
       type: 'doughnut',
       data: {
-        labels: ['Cumplidas previas','Cumplidas en sprints','En progreso','Planeadas sprint actual','Sin avance','Por asignar / No aplica'],
+        labels: [
+          `Cumplidas previas · ${nPrev}`,
+          `Cumplidas en sprints · ${nDone}`,
+          `En progreso · ${nProg}`,
+          `Planeadas Sprint actual · ${nPlan}`,
+          `Sin avance · ${nSin}`,
+          `Por asignar / No aplica · ${nOtros}`,
+        ],
         datasets: [{ data: [nPrev, nDone, nProg, nPlan, nSin, nOtros],
-          backgroundColor: ['#16a34a','#4ade80','#60a5fa','#22d3ee','#f87171','#cbd5e1'],
-          borderWidth:3, borderColor:'#fff', hoverOffset:6 }]
+          backgroundColor: ['#15803d','#4ade80','#60a5fa','#22d3ee','#ef4444','#cbd5e1'],
+          borderWidth:2, borderColor:'#fff', hoverOffset:8 }]
       },
-      plugins: DLf,
-      options: { ...basef, cutout:'68%',
+      options: { ...basef, cutout:'70%', layout:{ padding:4 },
         plugins: {
-          legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
-          tooltip:{ callbacks:{ label: c => ` ${c.label}: ${c.parsed} (${total ? Math.round(c.parsed/total*100) : 0}%)` } },
-          datalabels: dlf
+          legend:{ position:'right', labels:{ font:{size:11.5}, padding:10, boxWidth:12, boxHeight:12, usePointStyle:true, pointStyle:'circle' } },
+          tooltip:{ callbacks:{ label: c => ` ${c.parsed} (${total ? Math.round(c.parsed/total*100) : 0}%)` } },
+          datalabels: { display:false }
         }
       }
     }));
@@ -2163,22 +2169,23 @@ function renderCompromisos() {
     if (elS && spKeys.length) window.faseChartRefs.push(new Chart(elS, {
       type: 'bar',
       data: {
-        labels: spKeys.map(s => s === sprintVigente ? s + ' ●' : s),
+        labels: spKeys.map(s => s === sprintVigente ? s + ' (actual)' : s),
         datasets: [
-          { label:'Cumplidas',             data: spKeys.map(s => porSprint[s].done), backgroundColor:'#4ade80', stack:'s' },
-          { label:'En progreso',           data: spKeys.map(s => porSprint[s].prog), backgroundColor:'#60a5fa', stack:'s' },
-          { label:'Planeadas / sin iniciar', data: spKeys.map(s => porSprint[s].plan), backgroundColor:'#fbbf24', stack:'s' },
+          { label:'Cumplidas',               data: spKeys.map(s => porSprint[s].done), backgroundColor:'#4ade80', stack:'s', borderRadius:3, maxBarThickness:48 },
+          { label:'En progreso',             data: spKeys.map(s => porSprint[s].prog), backgroundColor:'#60a5fa', stack:'s', borderRadius:3, maxBarThickness:48 },
+          { label:'Planeadas / sin iniciar', data: spKeys.map(s => porSprint[s].plan), backgroundColor:'#fbbf24', stack:'s', borderRadius:3, maxBarThickness:48 },
         ]
       },
       plugins: DLf,
       options: { ...basef,
         plugins: {
-          legend:{ position:'bottom', labels:{ font:{size:11}, padding:8, boxWidth:10 } },
-          datalabels: dlf
+          legend:{ position:'bottom', labels:{ font:{size:11.5}, padding:10, boxWidth:12, boxHeight:12, usePointStyle:true, pointStyle:'circle' } },
+          datalabels: { color:'#1e293b', font:{size:11,weight:'700'}, formatter: v => v > 1 ? v : '' },
+          tooltip:{ callbacks:{ label: c => ` ${c.dataset.label}: ${c.parsed.y}` } }
         },
         scales: {
-          x: { stacked:true, grid:{ display:false }, ticks:{ font:{size:11} } },
-          y: { stacked:true, beginAtZero:true, ticks:{ precision:0, font:{size:11} } }
+          x: { stacked:true, grid:{ display:false }, ticks:{ font:{size:12,weight:'600'} } },
+          y: { stacked:true, beginAtZero:true, grid:{ color:'#f1f5f9' }, ticks:{ precision:0, font:{size:11} } }
         }
       }
     }));
@@ -3112,7 +3119,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-8';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-9';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
