@@ -1460,7 +1460,13 @@ const LS_KEY      = 'sdm_sheets_url';
 // ── URLs por defecto (hardcodeadas) ──────────────────────────────────────────
 // Si no hay URL guardada en localStorage, se usan estas automáticamente.
 // Para cambiar la fuente de datos, usa el ícono ⚙️ en el dashboard.
-const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=1877682083&single=true&output=csv';  // Avance Sprint
+const DEFAULT_DATA_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?output=csv';  // Avance Sprint (primera pestaña del documento publicado)
+// Migración: si el navegador tenía guardada la URL anterior (gid=1877682083),
+// se reemplaza por la nueva para que tome la pestaña vigente de avances.
+try {
+  const _stored = localStorage.getItem('sdm_sheets_url');
+  if (_stored && /gid=1877682083/.test(_stored)) localStorage.setItem('sdm_sheets_url', DEFAULT_DATA_URL);
+} catch(e) {}
 const DEFAULT_CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=2142401314&single=true&output=csv';  // Hoja2 (config sprints)
 const DEFAULT_COMPROMISOS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSkTJ5BkxxnvQQXkArvIaq2K9yJWUcesDWy6nMWKbQ2o27MAy5UmFVjEM7-G9NY5XqKOuDMUbb0V3jR/pub?gid=189486830&single=true&output=csv';  // Tabla Implementación
 const COMPROMISOS_TAB = '__COMPROMISOS__';
