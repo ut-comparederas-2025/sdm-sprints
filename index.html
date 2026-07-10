@@ -8,7 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <!-- v2026-07-07: homologación estados + panel detalle + etiquetas gráficas + Entorno/FASE -->
+  <!-- v2026-07-09: homologación estados + panel detalle + etiquetas gráficas + Entorno/FASE + adicionales C fuera de Tabla Implementación -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1793,6 +1793,31 @@ function renderCompromisos() {
 
   const byFecha = (a, b) => (a.fecha ? a.fecha.getTime() : Infinity) - (b.fecha ? b.fecha.getTime() : Infinity);
   Object.values(grupos).forEach(g => g.sort(byFecha));
+
+  // ➕ ADICIONALES: avances reportados con "C" cuya Propiedad NO está en la Tabla Implementación
+  const idsTabla = new Set(compromisosData.map(c => c.idRaw.replace(/\.0$/, '').trim()).filter(id => id && !/^0+$/.test(id)));
+  const adicionalesById = {};
+  allTasks.forEach(t => {
+    if (t.esCompromiso && t.id) {
+      const k = String(t.id).trim().replace(/\.0$/, '');
+      if (!k || /^0+$/.test(k) || idsTabla.has(k)) return;
+      (adicionalesById[k] = adicionalesById[k] || []).push(t);
+    }
+  });
+  grupos.ADICIONAL = Object.keys(adicionalesById).map(id => {
+    const tasks = byId[id] || adicionalesById[id];
+    const latest = tasks.reduce((a, b) =>
+      ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
+    const sprints = [...new Set(tasks.map(t => t.sprint).filter(Boolean))].sort((a, b) => sprintNumber(a) - sprintNumber(b));
+    return {
+      id, idRaw: id,
+      criterio: latest.name || ('Tarea ' + id),
+      aspecto: 'Adicional · no está en la Tabla Implementación',
+      estadoActual: '', fechaRaw: '', fecha: null,
+      tasks, latest, sprints, vencidaDias: 0, porVencer: null,
+    };
+  }).sort((a, b) => (+a.id || 0) - (+b.id || 0));
+
   cmpGruposCache = grupos;
 
   const total = compromisosData.length;
@@ -1845,12 +1870,14 @@ function renderCompromisos() {
       ${kpi('Por iniciar', grupos.INICIAR.length, '#64748b')}
       ${kpi('Cumplidos en sprints', grupos.CUMPLIDO.length, '#15803d')}
       ${kpi('Cumplidos previos', grupos.PREVIO.length, '#047857')}
+      ${kpi('Adicionales', grupos.ADICIONAL.length, '#6d28d9', 'reportados con C, fuera de tabla')}
     </div>
     ${grupoCard('VENCIDO', '⚠️ Vencidos sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin tarea')}
     ${grupoCard('PROGRESO', '🔵 En progreso', '#eff6ff', '#1d4ed8', 'en trabajo dentro de los sprints')}
     ${grupoCard('INICIAR', '⚪ Por iniciar', '#f1f5f9', '#475569', 'sin tarea aún')}
     ${grupoCard('CUMPLIDO', '✅ Cumplidos en sprints', '#ecfdf5', '#047857', 'trabajados y entregados')}
     ${grupoCard('PREVIO', '✔️ Cumplidos previos (000)', '#e1f5ee', '#065f46', 'no requirieron trabajo')}
+    ${grupoCard('ADICIONAL', '➕ Adicionales reportados', '#f5f3ff', '#6d28d9', 'avances con C que no están en la Tabla Implementación')}
   `;
 }
 
@@ -1902,7 +1929,7 @@ function renderSprintCompromisos() {
 
 function exportCompromisosExcel() {
   if (!cmpGruposCache) { toast('⚠️ No hay compromisos cargados'); return; }
-  const NOM = { VENCIDO:'Vencido sin avance', PROGRESO:'En progreso', INICIAR:'Por iniciar', CUMPLIDO:'Cumplido en sprints', PREVIO:'Cumplido previo' };
+  const NOM = { VENCIDO:'Vencido sin avance', PROGRESO:'En progreso', INICIAR:'Por iniciar', CUMPLIDO:'Cumplido en sprints', PREVIO:'Cumplido previo', ADICIONAL:'Adicional (fuera de tabla)' };
   const rows = [['#ID','Compromiso','Aspecto','Grupo','Sprint(s)','Estado','Entorno','Fecha entrega QA','Días de retraso']];
   Object.keys(cmpGruposCache).forEach(k => cmpGruposCache[k].forEach(it => rows.push([
     it.id || '', it.criterio, it.aspecto, NOM[k], it.sprints.join(', '),
