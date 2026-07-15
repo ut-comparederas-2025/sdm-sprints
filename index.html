@@ -2317,6 +2317,34 @@ function renderSprintCompromisos() {
     if (porTarea.has(key)) { porTarea.get(key).criterios.push(c.criterio); return; }
     porTarea.set(key, { c, id, latest: { status: c.avanceFinalRaw ? getStatus(c.avanceFinalRaw) : getStatus(''), entorno: '' }, criterios: [c.criterio] });
   });
+
+  // Complemento: tareas reportadas con "C" en Avance Sprint para este sprint que
+  // no quedaron arriba (su fila en la tabla no tiene este sprint, o no están en
+  // la tabla). Así el conteo coincide con filtrar C + sprint en el Sheet.
+  const cByKey = {};
+  compromisosData.forEach(c => {
+    const k = matchId(c.idRaw);
+    if (k && !/^0+$/.test(normId(c.idRaw)) && !/no\s*aplica/i.test(c.idRaw) && !cByKey[k]) cByKey[k] = c;
+  });
+  const extras = {};
+  allTasks.forEach(t => {
+    if (!(t.id && t.esCompromiso && (t.sprintsDestino || []).includes(activeSprint))) return;
+    const k = matchId(t.id);
+    if (!k || porTarea.has(k)) return;
+    const prev = extras[k];
+    if (!prev || (parseFechaReporte(t.fechaReporte) || 0) >= (parseFechaReporte(prev.fechaReporte) || 0)) extras[k] = t;
+  });
+  Object.keys(extras).forEach(k => {
+    const t = extras[k];
+    const c = cByKey[k];
+    porTarea.set(k, {
+      c: c || { aspecto: 'Adicional · no está en la Tabla Implementación', fecha: null, fechaRaw: '' },
+      id: k,
+      latest: { status: t.status, entorno: '' },
+      criterios: [(c && c.criterio) || t.name || ('Tarea ' + k)],
+    });
+  });
+
   const items = [...porTarea.values()].sort((a, b) => (+a.id || 0) - (+b.id || 0));
 
   if (!items.length) { section.style.display = 'none'; return; }
@@ -3205,7 +3233,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-7';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-8';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
