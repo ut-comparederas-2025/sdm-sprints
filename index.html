@@ -1897,10 +1897,9 @@ function renderCompromisos() {
     // Planeada/trabajándose en el sprint vigente: nunca vencida.
     const enSprintVigente = !!sprintVigente && sprints.includes(sprintVigente);
 
-    // Conteos para el panel de estados, cumplimiento y la gráfica por sprint
+    // Conteos para cumplimiento y la gráfica por sprint
     if (!esCero && !esNoAplica && id) {
-      if (st) estadoCounts[st.label] = (estadoCounts[st.label] || 0) + 1;
-      else sinReporte++;
+      if (!st) sinReporte++;
       if (c.cumplimiento) cumplCounts[c.cumplimiento] = (cumplCounts[c.cumplimiento] || 0) + 1;
       sprints.forEach(s => {
         const ps = porSprint[s] = porSprint[s] || { plan: 0, prog: 0, done: 0 };
@@ -1918,6 +1917,12 @@ function renderCompromisos() {
     else if (vencidaDias > 0) g = 'VENCIDO';
     else g = 'INICIAR';
     item.grupo = g;
+    // Estado EFECTIVO = exactamente lo que muestra la columna Avance Final de la lista
+    item.estadoEf = g === 'PREVIO' ? 'Cumplido previo'
+                  : g === 'PORASIGNAR' ? 'Por asignar'
+                  : g === 'NOAPLICA' ? 'No aplica'
+                  : (st ? st.label : 'Sin avance');
+    estadoCounts[item.estadoEf] = (estadoCounts[item.estadoEf] || 0) + 1;
     grupos[g].push(item);
     itemsAll.push(item);
   });
@@ -1947,6 +1952,7 @@ function renderCompromisos() {
       criterio: latest.name || ('Tarea ' + id),
       aspecto: 'Adicional · no está en la Tabla Implementación',
       st: latest.status,
+      estadoEf: latest.status.label,
       cumplimiento: '', estadoActual: '', obs: '', diasEst: '', fechaInicioRaw: '',
       fechaRaw: '', fecha: null,
       sprints, vencidaDias: 0, porVencer: null,
@@ -2024,16 +2030,18 @@ function renderCompromisos() {
     }
   }
 
-  // ── Panel "Detalle por estado" (mismas categorías de los sprints) ──
+  // ── Panel "Detalle por estado" (mismas categorías de los sprints, sobre TODA la lista) ──
+  const PANEL_EXTRA = { 'PENDIENTE': ['Sin avance', 'Por asignar'], 'EN PROGRESO': [], 'COMPLETADO': ['Cumplido previo'] };
+  const totPanel = itemsAll.length - (estadoCounts['No aplica'] || 0);
   const panelHtml = `<div class="status-panel">
     <div class="status-panel-head">
-      <div class="status-panel-title">Detalle por estado — tareas de implementación (${totConNumero})</div>
-      <div class="status-panel-hint">clic en un estado para filtrar las listas</div>
+      <div class="status-panel-title">Detalle por estado — tareas de implementación (${totPanel})</div>
+      <div class="status-panel-hint">clic en un estado para filtrar la lista</div>
     </div>
     <div class="status-panel-grid">` +
     Object.keys(STATUS_PANEL_LAYOUT).map(catKey => {
       const meta = CAT_META[catKey];
-      const labels = STATUS_PANEL_LAYOUT[catKey];
+      const labels = STATUS_PANEL_LAYOUT[catKey].concat(PANEL_EXTRA[catKey] || []);
       const catTotal = labels.reduce((s, l) => s + (estadoCounts[l] || 0), 0);
       return `<div class="sp-col">
         <div class="sp-col-head" style="background:${meta.bg};color:${meta.color}">${meta.title} · ${catTotal}</div>` +
@@ -2045,7 +2053,10 @@ function renderCompromisos() {
       `</div>`;
     }).join('') +
     `</div>
-    ${sinReporte ? `<div style="margin-top:8px;font-size:12px;color:#64748b">Con número pero sin dato en la columna Avance Final: <strong>${sinReporte}</strong></div>` : ''}
+    <div style="margin-top:8px;font-size:12px;color:#64748b">
+      ${sinReporte ? `Con número pero sin dato en Avance Final: <strong>${sinReporte}</strong> · ` : ''}
+      No aplica (excluidas): <strong>${estadoCounts['No aplica'] || 0}</strong>
+    </div>
     ${faseEstadoFiltro ? `<div class="status-filter-chip"><button id="fase-filter-clear">Filtro: ${escHtml(faseEstadoFiltro)} ✕</button></div>` : ''}
   </div>`;
 
@@ -2075,7 +2086,7 @@ function renderCompromisos() {
   </div>`;
 
   // ── Filas y tarjetas de grupo (columnas de la Tabla Implementación) ──
-  const aplicaFiltro = it => !faseEstadoFiltro || (it.st && it.st.label === faseEstadoFiltro);
+  const aplicaFiltro = it => !faseEstadoFiltro || it.estadoEf === faseEstadoFiltro;
 
   const CUMPL_STYLE = {
     'CUMPLE':    'background:#dcfce7;color:#166534',
@@ -2132,11 +2143,11 @@ function renderCompromisos() {
       if ((it.aspecto1 || '') !== curA1) {
         curA1 = it.aspecto1 || '';
         curA2 = null;
-        if (curA1) cuerpo += `<tr><td colspan="7" style="background:#0369a1;color:#fff;font-weight:700;font-size:12px;padding:7px 10px">${escHtml(curA1)}</td></tr>`;
+        if (curA1) cuerpo += `<tr><td colspan="7" style="padding:10px 0 2px;border-bottom:none"><div class="cmp-group-head" style="background:#0369a1;color:#fff;margin-bottom:0">${escHtml(curA1)}</div></td></tr>`;
       }
       if ((it.aspecto || '') !== curA2) {
         curA2 = it.aspecto || '';
-        if (curA2 && curA2 !== curA1) cuerpo += `<tr><td colspan="7" style="background:#e0f2fe;color:#075985;font-weight:600;font-size:11.5px;padding:5px 10px">${escHtml(curA2)}</td></tr>`;
+        if (curA2 && curA2 !== curA1) cuerpo += `<tr><td colspan="7" style="padding:6px 0 2px;border-bottom:none"><div class="cmp-group-head" style="background:#e0f2fe;color:#075985;margin-bottom:0;font-weight:600">${escHtml(curA2)}</div></td></tr>`;
       }
       cuerpo += fila(it, it.grupo);
     });
@@ -3188,7 +3199,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-3';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-5';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
