@@ -2186,7 +2186,6 @@ function renderCompromisos() {
     </div>` : ''}
     ${panelHtml}
     ${chartsHtml}
-    ${continuanHtml}
     ${listaHtml}
     ${grupoCard('ADICIONAL', '➕ Adicionales reportadas', '#f5f3ff', '#6d28d9', 'avances con C que no están en la Tabla Implementación')}
   `;
@@ -3189,7 +3188,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-2';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-3';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
