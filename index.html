@@ -1793,23 +1793,47 @@ function parseCompromisos(csvText) {
   };
   const K_CRIT  = findKey('CRITERIO', 'COMPROMISO', 'DESCRIPCION', 'TAREA');
   const K_PROP  = findKey('PROPIEDAD') || keys.find(k => nk(k) === 'ID') || null;
-  const K_EST   = findKey('ESTADO ACTUAL', 'ESTADO');
-  const K_ASP   = keys.includes('ASPECTO__2') ? 'ASPECTO__2' : findKey('ASPECTO');
-  const K_FECHA = keys.find(k => /FECHA\s*ENTREGA/i.test(k)) || findKey('ENTREGA QA', 'FECHA MAXIMA', 'FECHA LIMITE');
+  const aspCols = keys.filter(k => nk(k).replace(/__\d+$/, '') === 'ASPECTO' || nk(k).startsWith('ASPECTO'));
+  const K_ASP1  = aspCols[0] || null;
+  const K_ASP2  = aspCols[1] || aspCols[0] || null;
+  const K_CUMPL = keys.find(k => nk(k) === 'ESTADO') || null;                    // CUMPLE / PARCIAL / NO CUMPLE
+  const K_ESTACT= findKey('ESTADO ACTUAL');                                      // PLANIFICADO / DESARROLLO / AJUSTE…
+  const K_DIAS  = findKey('DIAS ESTIMADOS');
+  const K_FINI  = findKey('FECHA INICIO');
+  const K_FECHA = keys.find(k => /FECHA\s*ENTREGA/i.test(k)) || findKey('ENTREGA SDM', 'ENTREGA QA', 'FECHA LIMITE');
+  const K_OBS   = findKey('OBSERVACIONES', 'OBSERVACION');
+  const K_AVF   = findKey('AVANCE FINAL');                                       // estado homologado de la tarea
+  const K_SPR   = keys.find(k => nk(k) === 'SPRINT' || nk(k) === 'SPRINT SDM') || null;
+  const g = (row, k) => k ? String(row[k] || '').trim() : '';
 
-  let lastAspecto = '';
+  let lastAsp1 = '', lastAsp2 = '';
   const list = [];
   rows.forEach(row => {
-    const crit = K_CRIT ? String(row[K_CRIT] || '').trim() : '';
+    const crit = g(row, K_CRIT);
     if (!crit) return;
-    const aspecto = K_ASP ? String(row[K_ASP] || '').replace(/\s*\n\s*/g, ' · ').trim() : '';
-    if (aspecto) lastAspecto = aspecto;
-    const fechaRaw = K_FECHA ? String(row[K_FECHA] || '').trim() : '';
+    const a1 = g(row, K_ASP1).replace(/\s*\n\s*/g, ' · ');
+    const a2 = (K_ASP2 && K_ASP2 !== K_ASP1) ? g(row, K_ASP2).replace(/\s*\n\s*/g, ' · ') : '';
+    if (a1) lastAsp1 = a1;
+    if (a2) lastAsp2 = a2;
+    const fechaRaw = g(row, K_FECHA);
+    // Columna Sprint: puede traer varios ("SPRINT 3, SPRINT 4")
+    const sprintsTabla = [];
+    const sv = g(row, K_SPR);
+    const re = /sprint\s*0*(\d{1,2})\b/gi; let m;
+    while ((m = re.exec(sv)) !== null) { const nom = 'Sprint ' + parseInt(m[1], 10); if (!sprintsTabla.includes(nom)) sprintsTabla.push(nom); }
+    sprintsTabla.sort((x, y) => sprintNumber(x) - sprintNumber(y));
     list.push({
       criterio: crit,
-      aspecto: lastAspecto,
-      idRaw: K_PROP ? String(row[K_PROP] || '').trim() : '',
-      estadoActual: K_EST ? String(row[K_EST] || '').trim().toUpperCase() : '',
+      aspecto: lastAsp2 || lastAsp1,
+      aspecto1: lastAsp1,
+      idRaw: g(row, K_PROP),
+      cumplimiento: g(row, K_CUMPL).toUpperCase(),
+      estadoActual: g(row, K_ESTACT).toUpperCase(),
+      diasEst: g(row, K_DIAS),
+      fechaInicioRaw: g(row, K_FINI),
+      obs: g(row, K_OBS),
+      avanceFinalRaw: g(row, K_AVF),
+      sprintsTabla,
       fechaRaw,
       fecha: parseFechaCompromiso(fechaRaw),
     });
@@ -1849,53 +1873,45 @@ function renderCompromisos() {
   const sprintVigente = [...sprintsAll].reverse().find(hasPend) || sprintsAll[sprintsAll.length - 1] || null;
   console.log('[FASE] IDs de tareas en Avance Sprint:', Object.keys(byId).length, Object.keys(byId).slice(0, 15));
 
+  const cumplCounts = {};   // CUMPLE / PARCIAL / NO CUMPLE (columna ESTADO)
   compromisosData.forEach(c => {
     const id = normId(c.idRaw);
     const esCero = /^0+$/.test(id);
     const esNoAplica = /no\s*aplica/i.test(c.idRaw);   // no se va a desarrollar
     const sinNumero = !esNoAplica && !id;              // aún por asignar número
-    const tasks = (!esCero && !esNoAplica && id) ? (byId[matchId(c.idRaw)] || []) : [];
-    if (!esCero && !esNoAplica && id) { totConNumero++; if (tasks.length) totCruzados++; }
-    let latest = null;
-    if (tasks.length) {
-      latest = tasks.reduce((a, b) => {
-        const fa = parseFechaReporte(a.fechaReporte) || 0, fb = parseFechaReporte(b.fechaReporte) || 0;
-        return fb > fa ? b : a;
-      });
-    }
-    // Sprints donde se trabaja o planea (incluye TODOS los sprints destino de los
-    // reportes "C": "SPRINT 3, SPRINT 4" cuenta en ambos, igual que el carry-over)
-    const sprints = [...new Set(tasks.flatMap(t =>
-      (t.sprintsDestino && t.sprintsDestino.length) ? t.sprintsDestino : (t.sprint ? [t.sprint] : [])
-    ))].sort((a,b) => sprintNumber(a) - sprintNumber(b));
+    if (!esCero && !esNoAplica && id) { totConNumero++; if (c.avanceFinalRaw) totCruzados++; }
+    // Estado de la tarea = columna "Avance Final" de la Tabla Implementación
+    const st = c.avanceFinalRaw ? getStatus(c.avanceFinalRaw) : null;
+    // Sprints donde se planea/desarrolla = columna "Sprint" de la tabla
+    const sprints = c.sprintsTabla || [];
     const vencidaDias = c.fecha && c.fecha < hoy ? Math.round((hoy - c.fecha) / MS) : 0;
     const porVencer = c.fecha && c.fecha >= hoy ? Math.round((c.fecha - hoy) / MS) : null;
-    const item = Object.assign({}, c, { id, tasks, latest, sprints, vencidaDias, porVencer });
+    const item = Object.assign({}, c, { id, st, sprints, vencidaDias, porVencer });
 
-    const label = latest ? latest.status.label : null;
-    const cat   = latest ? latest.status.cat : null;
-    // Tiene avance = algún reporte (de sprint o "C") con Status distinto de "No iniciado".
-    const hasAvance = !!latest && label !== 'No iniciado' && label !== 'Sin estado';
-    // Cumplido = último reporte en categoría COMPLETADO o ya en Productivo.
-    const esCumplido = !!latest && (cat === 'COMPLETADO' || latest.enProduccion);
+    const cat = st ? st.cat : null;
+    // Mismas categorías del panel "Detalle por estado":
+    // COMPLETADO → cumplida · EN PROGRESO → en progreso · PENDIENTE → sin iniciar/planeada.
+    const esCumplido   = !!st && cat === 'COMPLETADO';
+    const esEnProgreso = !!st && cat === 'EN PROGRESO';
     // Planeada/trabajándose en el sprint vigente: nunca vencida.
     const enSprintVigente = !!sprintVigente && sprints.includes(sprintVigente);
 
-    // Conteos para el panel de estados y la gráfica por sprint
+    // Conteos para el panel de estados, cumplimiento y la gráfica por sprint
     if (!esCero && !esNoAplica && id) {
-      if (latest) estadoCounts[label] = (estadoCounts[label] || 0) + 1;
+      if (st) estadoCounts[st.label] = (estadoCounts[st.label] || 0) + 1;
       else sinReporte++;
+      if (c.cumplimiento) cumplCounts[c.cumplimiento] = (cumplCounts[c.cumplimiento] || 0) + 1;
       sprints.forEach(s => {
         const ps = porSprint[s] = porSprint[s] || { plan: 0, prog: 0, done: 0 };
-        if (esCumplido) ps.done++; else if (hasAvance) ps.prog++; else ps.plan++;
+        if (esCumplido) ps.done++; else if (esEnProgreso) ps.prog++; else ps.plan++;
       });
     }
 
-    if (esCero || (c.estadoActual === 'CUMPLE' && !tasks.length)) grupos.PREVIO.push(item);
+    if (esCero || (c.cumplimiento === 'CUMPLE' && !c.avanceFinalRaw)) grupos.PREVIO.push(item);
     else if (esNoAplica) grupos.NOAPLICA.push(item);
     else if (sinNumero) grupos.PORASIGNAR.push(item);
     else if (esCumplido) grupos.CUMPLIDO.push(item);
-    else if (hasAvance) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
+    else if (esEnProgreso) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
     else if (enSprintVigente) grupos.PLANEADA.push(item);
     else if (vencidaDias > 0) grupos.VENCIDO.push(item);
     else grupos.INICIAR.push(item);
@@ -1918,13 +1934,17 @@ function renderCompromisos() {
     const tasks = byId[id] || adicionalesById[id];
     const latest = tasks.reduce((a, b) =>
       ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
-    const sprints = [...new Set(tasks.map(t => t.sprint).filter(Boolean))].sort((a, b) => sprintNumber(a) - sprintNumber(b));
+    const sprints = [...new Set(tasks.flatMap(t =>
+      (t.sprintsDestino && t.sprintsDestino.length) ? t.sprintsDestino : (t.sprint ? [t.sprint] : [])
+    ))].sort((a, b) => sprintNumber(a) - sprintNumber(b));
     return {
       id, idRaw: id,
       criterio: latest.name || ('Tarea ' + id),
       aspecto: 'Adicional · no está en la Tabla Implementación',
-      estadoActual: '', fechaRaw: '', fecha: null,
-      tasks, latest, sprints, vencidaDias: 0, porVencer: null,
+      st: latest.status,
+      cumplimiento: '', estadoActual: '', obs: '', diasEst: '', fechaInicioRaw: '',
+      fechaRaw: '', fecha: null,
+      sprints, vencidaDias: 0, porVencer: null,
     };
   }).sort((a, b) => (+a.id || 0) - (+b.id || 0));
 
@@ -1932,21 +1952,22 @@ function renderCompromisos() {
 
   const total = compromisosData.length;
 
-  // Tareas de implementación del sprint vigente (mismo cálculo que la sección
-  // inferior de la pestaña del sprint): tareas "C" únicas con destino al sprint.
+  // Tareas de implementación del sprint vigente: filas de la tabla (Propiedad
+  // única) cuya columna Sprint incluye el sprint vigente.
   const tareasSV = {};
-  if (sprintVigente) allTasks.forEach(t => {
-    if (t.id && t.esCompromiso && (t.sprintsDestino || []).includes(sprintVigente)) {
-      const k = matchId(t.id);
-      const prev = tareasSV[k];
-      if (!prev || (parseFechaReporte(t.fechaReporte) || 0) >= (parseFechaReporte(prev.fechaReporte) || 0)) tareasSV[k] = t;
-    }
+  if (sprintVigente) compromisosData.forEach(c => {
+    const idU = normId(c.idRaw);
+    if (!idU || /^0+$/.test(idU) || /no\s*aplica/i.test(c.idRaw)) return;
+    if (!(c.sprintsTabla || []).includes(sprintVigente)) return;
+    const k = matchId(c.idRaw);
+    if (!tareasSV[k]) tareasSV[k] = c;
   });
   let svPlan = 0, svEjec = 0, svEntr = 0;
-  Object.values(tareasSV).forEach(t => {
-    if (t.status.cat === 'COMPLETADO' || t.enProduccion) svEntr++;
-    else if (t.status.label === 'No iniciado' || t.status.label === 'Sin estado') svPlan++;
-    else svEjec++;
+  Object.values(tareasSV).forEach(c => {
+    const stc = c.avanceFinalRaw ? getStatus(c.avanceFinalRaw) : null;
+    if (stc && stc.cat === 'COMPLETADO') svEntr++;
+    else if (stc && stc.cat === 'EN PROGRESO') svEjec++;
+    else svPlan++;
   });
   const svTot = svPlan + svEjec + svEntr;
 
@@ -1964,9 +1985,10 @@ function renderCompromisos() {
   });
   let continuanHtml = '';
   if (sprintVigente) {
-    const continuan = Object.entries(tareasSV).map(([k, t]) => ({
-      k, t,
-      previos: (t.sprintsDestino || []).filter(s => sprintNumber(s) < sprintNumber(sprintVigente)),
+    const continuan = Object.entries(tareasSV).map(([k, c2]) => ({
+      k, c2,
+      st: c2.avanceFinalRaw ? getStatus(c2.avanceFinalRaw) : getStatus(''),
+      previos: (c2.sprintsTabla || []).filter(s => sprintNumber(s) < sprintNumber(sprintVigente)),
     })).filter(x => x.previos.length).sort((a, b) => (+a.k || 0) - (+b.k || 0));
     if (continuan.length) {
       const desde = [...new Set(continuan.flatMap(x => x.previos))]
@@ -1974,24 +1996,22 @@ function renderCompromisos() {
         .map(s => s.replace(/sprint\s*/i, '')).join(',');
       const progBadgeC = st => {
         if (st.cat === 'COMPLETADO') return '<span class="cmp-sprint-badge" style="background:#e1f5ee;color:#085041">Entregada</span>';
-        if (st.label === 'No iniciado' || st.label === 'Sin estado') return '<span class="cmp-sprint-badge" style="background:#ecfeff;color:#0e7490">Programada</span>';
-        return '<span class="cmp-sprint-badge" style="background:#eff6ff;color:#1d4ed8">En ejecución</span>';
+        if (st.cat === 'EN PROGRESO') return '<span class="cmp-sprint-badge" style="background:#eff6ff;color:#1d4ed8">En ejecución</span>';
+        return '<span class="cmp-sprint-badge" style="background:#ecfeff;color:#0e7490">Programada</span>';
       };
       continuanHtml = `<div class="cmp-group" style="border-left:4px solid #f59e0b">
         <div class="cmp-group-head" style="background:#fef3c7;color:#92400e">🔄 Tareas que continúan de Sprint ${desde} → ${escHtml(sprintVigente)} · ${continuan.length}</div>
         <table class="cmp-table">
-          <thead><tr><th>#ID</th><th>Compromiso</th><th>Programación</th><th>Estado actual</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
+          <thead><tr><th>#ID</th><th>Compromiso</th><th>Programación</th><th>Avance Final</th><th>Entrega SDM</th></tr></thead>
           <tbody>${continuan.map(x => {
-            const s = x.t.status;
-            const prod = /productivo/i.test(x.t.entorno || '');
+            const s = x.st;
             return `<tr>
               <td style="color:#94a3b8;font-size:11px">#${escHtml(x.k)}</td>
-              <td style="font-weight:600">${escHtml(criterioByKey[x.k] || x.t.name || ('Tarea ' + x.k))}
+              <td style="font-weight:600">${escHtml(x.c2.criterio || ('Tarea ' + x.k))}
                 <div style="font-weight:400;font-size:11px;color:#94a3b8">Viene de ${x.previos.map(sp => escHtml(sp)).join(', ')}</div></td>
               <td>${progBadgeC(s)}</td>
               <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
-              <td>${x.t.entorno ? `<span class="tbl-status-badge" style="background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}">${escHtml(x.t.entorno)}</span>` : '—'}</td>
-              <td style="font-size:11.5px;white-space:nowrap">${fechaByKey[x.k] || '—'}</td>
+              <td style="font-size:11.5px;white-space:nowrap">${x.c2.fecha ? fmtF(x.c2.fecha) : escHtml(x.c2.fechaRaw || '—')}</td>
             </tr>`;
           }).join('')}</tbody>
         </table>
@@ -2020,7 +2040,7 @@ function renderCompromisos() {
       `</div>`;
     }).join('') +
     `</div>
-    ${sinReporte ? `<div style="margin-top:8px;font-size:12px;color:#64748b">Con número pero sin reporte en Avance Sprint: <strong>${sinReporte}</strong></div>` : ''}
+    ${sinReporte ? `<div style="margin-top:8px;font-size:12px;color:#64748b">Con número pero sin dato en la columna Avance Final: <strong>${sinReporte}</strong></div>` : ''}
     ${faseEstadoFiltro ? `<div class="status-filter-chip"><button id="fase-filter-clear">Filtro: ${escHtml(faseEstadoFiltro)} ✕</button></div>` : ''}
   </div>`;
 
@@ -2043,39 +2063,58 @@ function renderCompromisos() {
       <div class="chart-title">Tareas de implementación por sprint</div>
       <div class="chart-wrap bar" style="height:250px"><canvas id="fase-chart-sprints"></canvas></div>
     </div>` : ''}
+    ${Object.keys(cumplCounts).length ? `<div class="chart-card">
+      <div class="chart-title">Cumplimiento (columna ESTADO)</div>
+      <div class="chart-wrap donut" style="height:250px"><canvas id="fase-chart-cumpl"></canvas></div>
+    </div>` : ''}
   </div>`;
 
-  // ── Filas y tarjetas de grupo (con columna Sprint) ──
-  const aplicaFiltro = it => !faseEstadoFiltro || (it.latest && it.latest.status.label === faseEstadoFiltro);
+  // ── Filas y tarjetas de grupo (columnas de la Tabla Implementación) ──
+  const aplicaFiltro = it => !faseEstadoFiltro || (it.st && it.st.label === faseEstadoFiltro);
+
+  const CUMPL_STYLE = {
+    'CUMPLE':    'background:#dcfce7;color:#166534',
+    'PARCIAL':   'background:#fef3c7;color:#92400e',
+    'NO CUMPLE': 'background:#fee2e2;color:#b91c1c',
+  };
 
   const fila = (it, grupo) => {
     const sprintCell = it.sprints.length
       ? it.sprints.map(s => `<span class="cmp-sprint-badge">${escHtml(s)}</span>`).join(' ')
-      : (it.tasks.length ? '<span class="cmp-sprint-badge" style="background:#f1f5f9;color:#64748b">Fuera de sprint</span>' : '<span style="color:#cbd5e1">—</span>');
+      : '<span style="color:#cbd5e1">—</span>';
+    const cumplCell = it.cumplimiento
+      ? `<span class="tbl-status-badge" style="${CUMPL_STYLE[it.cumplimiento] || 'background:#f1f5f9;color:#475569'}">${escHtml(it.cumplimiento)}</span>`
+      : '<span style="color:#cbd5e1">—</span>';
+    const faseCell = it.estadoActual
+      ? `<span class="tbl-status-badge" style="background:#eef2ff;color:#3730a3">${escHtml(it.estadoActual)}</span>`
+      : '<span style="color:#cbd5e1">—</span>';
     let estadoHtml;
     if (grupo === 'PREVIO') estadoHtml = '<span class="tbl-status-badge" style="background:#e1f5ee;color:#085041">✔ Cumplido previo</span>';
-    else if (grupo === 'PLANEADA') estadoHtml = '<span class="tbl-status-badge" style="background:#cffafe;color:#0e7490">🗓️ Planeada</span>';
     else if (grupo === 'PORASIGNAR') estadoHtml = '<span class="tbl-status-badge" style="background:#f1f5f9;color:#475569">Por asignar</span>';
     else if (grupo === 'NOAPLICA') estadoHtml = '<span class="tbl-status-badge" style="background:#f3f4f6;color:#6b7280">No aplica</span>';
-    else if (it.latest) { const s = it.latest.status; estadoHtml = `<span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span>`; }
-    else estadoHtml = '<span class="tbl-status-badge" style="background:#f1f5f9;color:#64748b">Sin reporte</span>';
-    const prod = it.latest && /productivo/i.test(it.latest.entorno || '');
-    const entorno = it.latest && it.latest.entorno
-      ? `<span class="tbl-status-badge" style="background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}">${escHtml(it.latest.entorno)}</span>`
-      : '<span style="color:#cbd5e1">—</span>';
+    else if (it.st) { const s = it.st; estadoHtml = `<span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span>`; }
+    else if (grupo === 'PLANEADA') estadoHtml = '<span class="tbl-status-badge" style="background:#cffafe;color:#0e7490">🗓️ Planeada</span>';
+    else estadoHtml = '<span class="tbl-status-badge" style="background:#f1f5f9;color:#64748b">Sin avance</span>';
     let fechaHtml = it.fecha ? fmtF(it.fecha) : (it.fechaRaw && !/^n\.?a/i.test(it.fechaRaw) ? escHtml(it.fechaRaw) : '<span style="color:#cbd5e1">—</span>');
     if (grupo === 'VENCIDO' || grupo === 'INICIAR') {
       if (it.vencidaDias > 0) fechaHtml += ` <span class="cmp-late">${it.vencidaDias} día${it.vencidaDias === 1 ? '' : 's'} de retraso</span>`;
       else if (it.porVencer !== null) fechaHtml += ` <span style="color:#b45309;font-weight:600;font-size:11px">en ${it.porVencer} día${it.porVencer === 1 ? '' : 's'}</span>`;
     }
     if (grupo === 'CUMPLIDO' && it.fecha) fechaHtml += ' <span style="color:#15803d">✓</span>';
+    const iniSub = (it.fechaInicioRaw || it.diasEst)
+      ? `<div style="font-size:10.5px;color:#94a3b8;white-space:nowrap">${it.fechaInicioRaw ? 'Inicio ' + escHtml(it.fechaInicioRaw) : ''}${it.diasEst ? (it.fechaInicioRaw ? ' · ' : '') + escHtml(it.diasEst) + ' días est.' : ''}</div>`
+      : '';
+    const obsSub = it.obs
+      ? `<div style="font-size:11px;color:#b45309;margin-top:2px" title="${escHtml(it.obs)}">📝 ${escHtml(it.obs.length > 150 ? it.obs.slice(0, 150) + '…' : it.obs)}</div>`
+      : '';
     return `<tr>
       <td style="color:#94a3b8;font-size:11px;white-space:nowrap;width:44px">${escHtml(it.id) || '—'}</td>
-      <td><div style="font-weight:600">${escHtml(it.criterio)}</div><div style="font-size:11px;color:#94a3b8">${escHtml(it.aspecto)}</div></td>
-      <td style="width:104px">${sprintCell}</td>
-      <td style="width:148px">${estadoHtml}</td>
-      <td style="width:112px">${entorno}</td>
-      <td style="font-size:11.5px;white-space:nowrap;width:148px">${fechaHtml}</td>
+      <td><div style="font-weight:600">${escHtml(it.criterio)}</div><div style="font-size:11px;color:#94a3b8">${escHtml(it.aspecto)}</div>${obsSub}</td>
+      <td style="width:88px">${cumplCell}</td>
+      <td style="width:104px">${faseCell}</td>
+      <td style="width:140px">${estadoHtml}</td>
+      <td style="width:100px">${sprintCell}</td>
+      <td style="font-size:11.5px;white-space:nowrap;width:140px">${fechaHtml}${iniSub}</td>
     </tr>`;
   };
 
@@ -2085,18 +2124,17 @@ function renderCompromisos() {
     return `<div class="cmp-group">
       <div class="cmp-group-head" style="background:${bg};color:${color}">${titulo} · ${g.length}${extra ? ' — ' + extra : ''}</div>
       <table class="cmp-table">
-        <thead><tr><th>#</th><th>Compromiso</th><th>Sprint</th><th>Estado</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
+        <thead><tr><th>#</th><th>Compromiso</th><th>Cumplim.</th><th>Estado actual</th><th>Avance Final</th><th>Sprint</th><th>Entrega SDM</th></tr></thead>
         <tbody>${g.map(it => fila(it, key)).join('')}</tbody>
       </table>
     </div>`;
   };
 
-  console.log(`[FASE] Compromisos con número: ${totConNumero} · cruzaron con Avance Sprint: ${totCruzados}`);
+  console.log(`[FASE] Compromisos con número: ${totConNumero} · con Avance Final: ${totCruzados}`);
   const avisoCruce = (totConNumero > 0 && totCruzados === 0)
     ? `<div class="cmp-group" style="background:#fef2f2;border-color:#fecaca;color:#991b1b;font-size:12.5px">
-         ⚠️ Ningún compromiso con número cruzó con los reportes de Avance Sprint.
-         Revisar que la columna <strong>Propiedad</strong> de ambas pestañas tenga los mismos números.
-         (Detalle técnico en la consola del navegador: F12 → Console)
+         ⚠️ Ningún compromiso con número tiene dato en la columna <strong>Avance Final</strong> de la Tabla Implementación.
+         Revisar que esa columna esté diligenciada y publicada.
        </div>`
     : '';
 
@@ -2197,6 +2235,29 @@ function renderCompromisos() {
         }
       }
     }));
+    const elC = document.getElementById('fase-chart-cumpl');
+    if (elC) {
+      const CUMPL_ORDER = ['CUMPLE', 'PARCIAL', 'NO CUMPLE'];
+      const CUMPL_COLOR = { 'CUMPLE':'#4ade80', 'PARCIAL':'#fbbf24', 'NO CUMPLE':'#ef4444' };
+      const cLabels = CUMPL_ORDER.filter(l => cumplCounts[l]).concat(Object.keys(cumplCounts).filter(l => !CUMPL_ORDER.includes(l)));
+      const cTot = cLabels.reduce((s, l) => s + cumplCounts[l], 0);
+      window.faseChartRefs.push(new Chart(elC, {
+        type: 'doughnut',
+        data: {
+          labels: cLabels.map(l => `${l} · ${cumplCounts[l]}`),
+          datasets: [{ data: cLabels.map(l => cumplCounts[l]),
+            backgroundColor: cLabels.map(l => CUMPL_COLOR[l] || '#cbd5e1'),
+            borderWidth:2, borderColor:'#fff', hoverOffset:8 }]
+        },
+        options: { ...basef, cutout:'70%', layout:{ padding:4 },
+          plugins: {
+            legend:{ position:'right', labels:{ font:{size:11.5}, padding:10, boxWidth:12, boxHeight:12, usePointStyle:true, pointStyle:'circle' } },
+            tooltip:{ callbacks:{ label: c => ` ${c.parsed} (${cTot ? Math.round(c.parsed/cTot*100) : 0}%)` } },
+            datalabels: { display:false }
+          }
+        }
+      }));
+    }
   }
 }
 
@@ -2205,42 +2266,16 @@ function renderSprintCompromisos() {
   if (!section) return;
   if (isCompromisosView() || !compromisosData || !compromisosData.length) { section.style.display = 'none'; return; }
 
-  // SOLO reportes "C" (Fase de Implementación) cuyo Sprint SDM (col. AE)
-  // incluye el sprint activo — coincide con filtrar C + sprint en el Sheet.
-  const byIdSprint = {};
-  allTasks.forEach(t => {
-    if (t.id && t.esCompromiso && (t.sprintsDestino || []).includes(activeSprint)) {
-      const k = matchId(t.id);
-      (byIdSprint[k] = byIdSprint[k] || []).push(t);
-    }
-  });
-
-  // Una fila por TAREA (Propiedad única): si una misma Propiedad cubre varios
-  // compromisos de la tabla, se agrupan en la misma fila. Así el conteo coincide
-  // con filtrar C + sprint en el Sheet.
+  // Una fila por TAREA (Propiedad única) cuya columna "Sprint" de la Tabla
+  // Implementación incluye el sprint activo. El estado sale de "Avance Final".
   const porTarea = new Map();
   compromisosData.forEach(c => {
     const id = normId(c.idRaw);
     if (!id || /^0+$/.test(id) || /no\s*aplica/i.test(c.idRaw)) return;
+    if (!(c.sprintsTabla || []).includes(activeSprint)) return;
     const key = matchId(c.idRaw);
-    const ts = byIdSprint[key];
-    if (!ts || !ts.length) return;
     if (porTarea.has(key)) { porTarea.get(key).criterios.push(c.criterio); return; }
-    const latest = ts.reduce((a, b) =>
-      ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
-    porTarea.set(key, { c, id, latest, criterios: [c.criterio] });
-  });
-  // Tareas "C" de este sprint cuya Propiedad NO está en la Tabla Implementación:
-  // se listan como adicionales para que el total coincida con el filtro del Sheet.
-  Object.keys(byIdSprint).forEach(key => {
-    if (porTarea.has(key)) return;
-    const ts = byIdSprint[key];
-    const latest = ts.reduce((a, b) =>
-      ((parseFechaReporte(b.fechaReporte) || 0) > (parseFechaReporte(a.fechaReporte) || 0)) ? b : a);
-    porTarea.set(key, {
-      c: { aspecto: 'Adicional · no está en la Tabla Implementación', fecha: null, fechaRaw: '' },
-      id: key, latest, criterios: [latest.name || ('Tarea ' + key)],
-    });
+    porTarea.set(key, { c, id, latest: { status: c.avanceFinalRaw ? getStatus(c.avanceFinalRaw) : getStatus(''), entorno: '' }, criterios: [c.criterio] });
   });
   const items = [...porTarea.values()].sort((a, b) => (+a.id || 0) - (+b.id || 0));
 
@@ -2252,21 +2287,19 @@ function renderSprintCompromisos() {
   // Programación: refleja el ciclo programada → en ejecución → entregada
   const progBadge = st => {
     if (st.cat === 'COMPLETADO') return '<span class="cmp-sprint-badge" style="background:#e1f5ee;color:#085041">Entregada</span>';
-    if (st.label === 'No iniciado' || st.label === 'Sin estado') return '<span class="cmp-sprint-badge" style="background:#ecfeff;color:#0e7490">Programada</span>';
-    return '<span class="cmp-sprint-badge" style="background:#eff6ff;color:#1d4ed8">En ejecución</span>';
+    if (st.cat === 'EN PROGRESO') return '<span class="cmp-sprint-badge" style="background:#eff6ff;color:#1d4ed8">En ejecución</span>';
+    return '<span class="cmp-sprint-badge" style="background:#ecfeff;color:#0e7490">Programada</span>';
   };
   document.getElementById('sprint-compromisos-list').innerHTML = `<table class="carryover-table">
-    <thead><tr><th>#ID</th><th>Compromiso</th><th>Programación</th><th>Estado actual</th><th>Entorno</th><th>Entrega QA</th></tr></thead>
+    <thead><tr><th>#ID</th><th>Compromiso</th><th>Programación</th><th>Avance Final</th><th>Entrega SDM</th></tr></thead>
     <tbody>${items.map(x => {
       const s = x.latest.status;
-      const prod = /productivo/i.test(x.latest.entorno || '');
       return `<tr>
         <td style="color:#94a3b8;font-size:11px">#${escHtml(x.id)}</td>
         <td style="font-weight:600">${[...new Set(x.criterios)].map(cr => escHtml(cr)).join('<div style="height:3px"></div>')}
           <div style="font-weight:400;font-size:11px;color:#94a3b8">${escHtml(x.c.aspecto)}${x.criterios.length > 1 ? ` · cubre ${x.criterios.length} compromisos` : ''}</div></td>
         <td>${progBadge(s)}</td>
         <td><span class="tbl-status-badge" style="background:${s.bg};color:${s.color}">${s.emoji} ${s.label}</span></td>
-        <td>${x.latest.entorno ? `<span class=\"tbl-status-badge\" style=\"background:${prod ? '#e1f5ee' : '#faeeda'};color:${prod ? '#085041' : '#854f0b'}\">${escHtml(x.latest.entorno)}</span>` : '—'}</td>
         <td style="font-size:11.5px;white-space:nowrap">${x.c.fecha ? fmtF(x.c.fecha) : escHtml(x.c.fechaRaw || '—')}</td>
       </tr>`;
     }).join('')}</tbody>
@@ -2276,17 +2309,22 @@ function renderSprintCompromisos() {
 function exportCompromisosExcel() {
   if (!cmpGruposCache) { toast('⚠️ No hay compromisos cargados'); return; }
   const NOM = { VENCIDO:'Vencida sin avance', PROGRESO:'En progreso', PLANEADA:'Planeada (sprint actual)', INICIAR:'Por iniciar', PORASIGNAR:'Por asignar número', NOAPLICA:'No aplica', CUMPLIDO:'Cumplida en sprints', PREVIO:'Cumplida previa', ADICIONAL:'Adicional (fuera de tabla)' };
-  const rows = [['#ID','Compromiso','Aspecto','Grupo','Sprint(s)','Estado','Entorno','Fecha entrega QA','Días de retraso']];
+  const rows = [['#ID','Compromiso','Aspecto','Grupo','Cumplimiento','Estado actual','Avance Final','Sprint(s)','Fecha inicio','Días est.','Fecha entrega SDM','Días de retraso','Observaciones']];
   Object.keys(cmpGruposCache).forEach(k => cmpGruposCache[k].forEach(it => rows.push([
-    it.id || '', it.criterio, it.aspecto, NOM[k], it.sprints.join(', '),
-    it.latest ? it.latest.status.label : (k === 'PREVIO' ? 'Cumplida previa' : (k === 'PORASIGNAR' ? 'Por asignar' : (k === 'NOAPLICA' ? 'No aplica' : 'Sin reporte'))),
-    it.latest ? (it.latest.entorno || '') : '',
+    it.id || '', it.criterio, it.aspecto, NOM[k],
+    it.cumplimiento || '',
+    it.estadoActual || '',
+    it.st ? it.st.label : (k === 'PREVIO' ? 'Cumplida previa' : (k === 'PORASIGNAR' ? 'Por asignar' : (k === 'NOAPLICA' ? 'No aplica' : 'Sin avance'))),
+    (it.sprints || []).join(', '),
+    it.fechaInicioRaw || '',
+    it.diasEst || '',
     it.fechaRaw || '',
-    (k !== 'PREVIO' && k !== 'CUMPLIDO' && it.vencidaDias > 0) ? it.vencidaDias : ''
+    (k !== 'PREVIO' && k !== 'CUMPLIDO' && it.vencidaDias > 0) ? it.vencidaDias : '',
+    it.obs || ''
   ])));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [8,50,26,18,14,20,16,16,12].map(w => ({ wch: w }));
+  ws['!cols'] = [8,50,26,18,12,14,18,14,12,9,14,10,40].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, 'Compromisos');
   const filename = `SDM_Compromisos_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, filename);
@@ -3127,7 +3165,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v10jul-12';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-1';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
