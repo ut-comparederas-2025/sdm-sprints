@@ -2118,7 +2118,7 @@ function renderCompromisos() {
     }
     if (grupo === 'CUMPLIDO' && it.fecha) fechaHtml += ' <span style="color:#15803d">✓</span>';
     const iniSub = (it.fechaInicioRaw || it.diasEst)
-      ? `<div style="font-size:10.5px;color:#94a3b8;white-space:nowrap">${it.fechaInicioRaw ? 'Inicio ' + escHtml(it.fechaInicioRaw) : ''}${it.diasEst ? (it.fechaInicioRaw ? ' · ' : '') + escHtml(it.diasEst) + ' días est.' : ''}</div>`
+      ? `<div style="font-size:10.5px;color:#94a3b8">${it.fechaInicioRaw ? 'Inicio ' + escHtml(it.fechaInicioRaw) : ''}${it.diasEst ? (it.fechaInicioRaw ? ' · ' : '') + escHtml(it.diasEst) + ' días est.' : ''}</div>`
       : '';
     const obsSub = it.obs
       ? `<div style="font-size:11px;color:#b45309;margin-top:2px" title="${escHtml(it.obs)}">📝 ${escHtml(it.obs.length > 150 ? it.obs.slice(0, 150) + '…' : it.obs)}</div>`
@@ -2130,7 +2130,7 @@ function renderCompromisos() {
       <td style="width:104px">${faseCell}</td>
       <td style="width:140px">${estadoHtml}</td>
       <td style="width:100px">${sprintCell}</td>
-      <td style="font-size:11.5px;white-space:nowrap;width:140px">${fechaHtml}${iniSub}</td>
+      <td style="font-size:11.5px;width:140px">${fechaHtml}${iniSub}</td>
     </tr>`;
   };
 
@@ -2153,8 +2153,8 @@ function renderCompromisos() {
     });
     listaHtml = `<div class="cmp-group">
       <div class="cmp-group-head" style="background:#0f1e36;color:#fff">📋 Tabla Implementación · ${filtrados.length}${faseEstadoFiltro ? ' — filtro: ' + escHtml(faseEstadoFiltro) : ''}</div>
-      <table class="cmp-table">
-        <thead><tr><th>#</th><th>Criterio</th><th>Estado</th><th>Estado actual</th><th>Avance Final</th><th>Sprint</th><th>Entrega SDM</th></tr></thead>
+      <table class="cmp-table" style="table-layout:fixed;word-wrap:break-word">
+        <thead><tr><th style="width:40px">#</th><th>Criterio</th><th style="width:82px">Estado</th><th style="width:98px">Estado actual</th><th style="width:128px">Avance Final</th><th style="width:86px">Sprint</th><th style="width:120px">Entrega SDM</th></tr></thead>
         <tbody>${cuerpo}</tbody>
       </table>
     </div>`;
@@ -2165,8 +2165,8 @@ function renderCompromisos() {
     if (!g.length) return '';
     return `<div class="cmp-group">
       <div class="cmp-group-head" style="background:${bg};color:${color}">${titulo} · ${g.length}${extra ? ' — ' + extra : ''}</div>
-      <table class="cmp-table">
-        <thead><tr><th>#</th><th>Criterio</th><th>Estado</th><th>Estado actual</th><th>Avance Final</th><th>Sprint</th><th>Entrega SDM</th></tr></thead>
+      <table class="cmp-table" style="table-layout:fixed;word-wrap:break-word">
+        <thead><tr><th style="width:40px">#</th><th>Criterio</th><th style="width:82px">Estado</th><th style="width:98px">Estado actual</th><th style="width:128px">Avance Final</th><th style="width:86px">Sprint</th><th style="width:120px">Entrega SDM</th></tr></thead>
         <tbody>${g.map(it => fila(it, key)).join('')}</tbody>
       </table>
     </div>`;
@@ -3199,7 +3199,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-5';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-6';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
