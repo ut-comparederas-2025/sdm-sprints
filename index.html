@@ -1874,6 +1874,7 @@ function renderCompromisos() {
   console.log('[FASE] IDs de tareas en Avance Sprint:', Object.keys(byId).length, Object.keys(byId).slice(0, 15));
 
   const cumplCounts = {};   // CUMPLE / PARCIAL / NO CUMPLE (columna ESTADO)
+  const itemsAll = [];      // todas las filas en el orden de la tabla, con su grupo
   compromisosData.forEach(c => {
     const id = normId(c.idRaw);
     const esCero = /^0+$/.test(id);
@@ -1907,14 +1908,18 @@ function renderCompromisos() {
       });
     }
 
-    if (esCero || (c.cumplimiento === 'CUMPLE' && !c.avanceFinalRaw)) grupos.PREVIO.push(item);
-    else if (esNoAplica) grupos.NOAPLICA.push(item);
-    else if (sinNumero) grupos.PORASIGNAR.push(item);
-    else if (esCumplido) grupos.CUMPLIDO.push(item);
-    else if (esEnProgreso) { grupos.PROGRESO.push(item); if (vencidaDias > 0) retrasoProg++; }
-    else if (enSprintVigente) grupos.PLANEADA.push(item);
-    else if (vencidaDias > 0) grupos.VENCIDO.push(item);
-    else grupos.INICIAR.push(item);
+    let g;
+    if (esCero || (c.cumplimiento === 'CUMPLE' && !c.avanceFinalRaw)) g = 'PREVIO';
+    else if (esNoAplica) g = 'NOAPLICA';
+    else if (sinNumero) g = 'PORASIGNAR';
+    else if (esCumplido) g = 'CUMPLIDO';
+    else if (esEnProgreso) { g = 'PROGRESO'; if (vencidaDias > 0) retrasoProg++; }
+    else if (enSprintVigente) g = 'PLANEADA';
+    else if (vencidaDias > 0) g = 'VENCIDO';
+    else g = 'INICIAR';
+    item.grupo = g;
+    grupos[g].push(item);
+    itemsAll.push(item);
   });
 
   const byFecha = (a, b) => (a.fecha ? a.fecha.getTime() : Infinity) - (b.fecha ? b.fecha.getTime() : Infinity);
@@ -2109,7 +2114,7 @@ function renderCompromisos() {
       : '';
     return `<tr>
       <td style="color:#94a3b8;font-size:11px;white-space:nowrap;width:44px">${escHtml(it.id) || '—'}</td>
-      <td><div style="font-weight:600">${escHtml(it.criterio)}</div><div style="font-size:11px;color:#94a3b8">${escHtml(it.aspecto)}</div>${obsSub}</td>
+      <td><div style="font-weight:600">${escHtml(it.criterio)}</div>${obsSub}</td>
       <td style="width:88px">${cumplCell}</td>
       <td style="width:104px">${faseCell}</td>
       <td style="width:140px">${estadoHtml}</td>
@@ -2118,13 +2123,39 @@ function renderCompromisos() {
     </tr>`;
   };
 
+  // ── Lista única, agrupada por Aspecto (como la Tabla Implementación del Sheet) ──
+  const filtrados = itemsAll.filter(aplicaFiltro);
+  let listaHtml = '';
+  if (filtrados.length) {
+    let cuerpo = '', curA1 = null, curA2 = null;
+    filtrados.forEach(it => {
+      if ((it.aspecto1 || '') !== curA1) {
+        curA1 = it.aspecto1 || '';
+        curA2 = null;
+        if (curA1) cuerpo += `<tr><td colspan="7" style="background:#0369a1;color:#fff;font-weight:700;font-size:12px;padding:7px 10px">${escHtml(curA1)}</td></tr>`;
+      }
+      if ((it.aspecto || '') !== curA2) {
+        curA2 = it.aspecto || '';
+        if (curA2 && curA2 !== curA1) cuerpo += `<tr><td colspan="7" style="background:#e0f2fe;color:#075985;font-weight:600;font-size:11.5px;padding:5px 10px">${escHtml(curA2)}</td></tr>`;
+      }
+      cuerpo += fila(it, it.grupo);
+    });
+    listaHtml = `<div class="cmp-group">
+      <div class="cmp-group-head" style="background:#0f1e36;color:#fff">📋 Tabla Implementación · ${filtrados.length}${faseEstadoFiltro ? ' — filtro: ' + escHtml(faseEstadoFiltro) : ''}</div>
+      <table class="cmp-table">
+        <thead><tr><th>#</th><th>Criterio</th><th>Estado</th><th>Estado actual</th><th>Avance Final</th><th>Sprint</th><th>Entrega SDM</th></tr></thead>
+        <tbody>${cuerpo}</tbody>
+      </table>
+    </div>`;
+  }
+
   const grupoCard = (key, titulo, bg, color, extra) => {
     const g = grupos[key].filter(aplicaFiltro);
     if (!g.length) return '';
     return `<div class="cmp-group">
       <div class="cmp-group-head" style="background:${bg};color:${color}">${titulo} · ${g.length}${extra ? ' — ' + extra : ''}</div>
       <table class="cmp-table">
-        <thead><tr><th>#</th><th>Compromiso</th><th>Cumplim.</th><th>Estado actual</th><th>Avance Final</th><th>Sprint</th><th>Entrega SDM</th></tr></thead>
+        <thead><tr><th>#</th><th>Criterio</th><th>Estado</th><th>Estado actual</th><th>Avance Final</th><th>Sprint</th><th>Entrega SDM</th></tr></thead>
         <tbody>${g.map(it => fila(it, key)).join('')}</tbody>
       </table>
     </div>`;
@@ -2156,14 +2187,7 @@ function renderCompromisos() {
     ${panelHtml}
     ${chartsHtml}
     ${continuanHtml}
-    ${grupoCard('VENCIDO', '⚠️ Vencidas sin avance', '#fef2f2', '#991b1b', 'fecha pactada pasada y sin avance reportado')}
-    ${grupoCard('PROGRESO', '🔵 En progreso', '#eff6ff', '#1d4ed8', 'con avance reportado en Avance Sprint')}
-    ${grupoCard('PLANEADA', '🗓️ Sprint actual — planeadas', '#ecfeff', '#0e7490', sprintVigente ? 'asignadas a ' + escHtml(sprintVigente) + ', aún sin iniciar' : 'asignadas al sprint vigente, aún sin iniciar')}
-    ${grupoCard('INICIAR', '⚪ Por iniciar', '#f1f5f9', '#475569', 'con número, sin avance y fecha vigente')}
-    ${grupoCard('PORASIGNAR', '🔖 Por asignar número', '#f1efe8', '#444441', 'se les asignará número para reportar avance')}
-    ${grupoCard('NOAPLICA', '🚫 No aplica', '#f3f4f6', '#6b7280', 'no se van a desarrollar')}
-    ${grupoCard('CUMPLIDO', '✅ Cumplidas en sprints', '#ecfdf5', '#047857', 'trabajadas y entregadas')}
-    ${grupoCard('PREVIO', '✔️ Cumplidas previas (000)', '#e1f5ee', '#065f46', 'no requirieron trabajo')}
+    ${listaHtml}
     ${grupoCard('ADICIONAL', '➕ Adicionales reportadas', '#f5f3ff', '#6d28d9', 'avances con C que no están en la Tabla Implementación')}
   `;
 
@@ -3165,7 +3189,7 @@ function exportToPDF(){window.print();}
 function updateTimestamp(){
   const el=document.getElementById('update-time');
   const rd=document.getElementById('report-date');
-  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-1';
+  if(el)el.textContent='Cargado '+new Date().toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true})+' · v11jul-2';
   if(rd&&reportDate)rd.textContent='● Reporte: '+reportDate;
 }
 
